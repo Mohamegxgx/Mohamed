@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="quick_expense"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher_round"
+        android:shortcutShortLabel="@string/shortcut_quick_expense_short"
+        android:shortcutLongLabel="@string/shortcut_quick_expense_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.aistudio.elbagorrymoney.k7m2xp"
+            android:targetClass="com.example.MainActivity">
+            <extra
+                android:name="extra_nav_destination"
+                android:value="quick_add" />
+        </intent>
+    </shortcut>
+
+    <shortcut
+        android:shortcutId="quick_income"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher_round"
+        android:shortcutShortLabel="@string/shortcut_quick_income_short"
+        android:shortcutLongLabel="@string/shortcut_quick_income_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.aistudio.elbagorrymoney.k7m2xp"
+            android:targetClass="com.example.MainActivity">
+            <extra
+                android:name="extra_nav_destination"
+                android:value="quick_add_income" />
+        </intent>
+    </shortcut>
+
+    <shortcut
+        android:shortcutId="smart_reader"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher_round"
+        android:shortcutShortLabel="@string/shortcut_smart_reader_short"
+        android:shortcutLongLabel="@string/shortcut_smart_reader_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.aistudio.elbagorrymoney.k7m2xp"
+            android:targetClass="com.example.MainActivity">
+            <extra
+                android:name="extra_nav_destination"
+                android:value="smart_reader" />
+        </intent>
+    </shortcut>
+</shortcuts>

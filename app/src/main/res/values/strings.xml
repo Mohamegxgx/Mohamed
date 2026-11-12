@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">ELBAGORRY Money</string>
+    <string name="nav_dashboard">لوحة التحكم</string>
+    <string name="nav_transactions">المعاملات</string>
+    <string name="nav_accounts">الحسابات</string>
+    <string name="nav_planning">الالتزامات</string>
+    <string name="nav_analytics">التحليلات</string>
+    <string name="quick_add_transaction">إضافة معاملة</string>
+    <string name="privacy_hide">إخفاء المبالغ</string>
+    <string name="privacy_show">إظهار المبالغ</string>
+    <string name="currency_egp">ج.م</string>
+    <string name="error_invalid_amount">يرجى إدخال مبلغ صحيح أكبر من صفر</string>
+    <string name="error_same_account_transfer">لا يمكن التحويل لنفس الحساب</string>
+    <string name="data_loss_warning">جميع بياناتك المالية محفوظة محليًا على جهازك فقط. حذف التطبيق دون تصدير نسخة احتياطية سيؤدي إلى فقدان البيانات نهائيًا.</string>
+    <string name="biometric_prompt_title">تأمين ELBAGORRY Money</string>
+    <string name="biometric_prompt_subtitle">تحقق من هويتك للوصول إلى بياناتك المالية</string>
+    <string name="notification_channel_name">تنبيهات ELBAGORRY Money</string>
+    <string name="notification_channel_desc">تذكير بمواعيد الأقساط، الفواتير، الميزانيات، والرواتب</string>
+    <string name="notification_summary_channel_name">الملخص المالي الدوري</string>
+    <string name="notification_summary_channel_desc">ملخص يومي وأسبوعي لصافي الرصيد والمصروفات والميزانية</string>
+    <string name="smart_reader_service_label">قارئ الإشعارات المالية - ELBAGORRY Money</string>
+    <string name="widget_summary_name">ملخص ELBAGORRY Money</string>
+    <string name="widget_summary_description">يعرض صافي الرصيد ومصروف اليوم مع زر الإضافة السريعة ووضع الخصوصية.</string>
+    <string name="shortcut_quick_expense_short">مصروف سريع</string>
+    <string name="shortcut_quick_expense_long">تسجيل مصروف سريع</string>
+    <string name="shortcut_quick_income_short">دخل سريع</string>
+    <string name="shortcut_quick_income_long">تسجيل دخل سريع</string>
+    <string name="shortcut_smart_reader_short">القارئ الذكي</string>
+    <string name="shortcut_smart_reader_long">فتح قارئ الرسائل الذكي</string>
+</resources>

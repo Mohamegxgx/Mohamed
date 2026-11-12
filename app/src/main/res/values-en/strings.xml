@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">ELBAGORRY Money</string>
+    <string name="nav_dashboard">Dashboard</string>
+    <string name="nav_transactions">Transactions</string>
+    <string name="nav_accounts">Accounts</string>
+    <string name="nav_planning">Planning</string>
+    <string name="nav_analytics">Insights</string>
+    <string name="quick_add_transaction">Add Transaction</string>
+    <string name="privacy_hide">Hide Amounts</string>
+    <string name="privacy_show">Show Amounts</string>
+    <string name="currency_egp">EGP</string>
+    <string name="error_invalid_amount">Please enter a valid amount greater than zero</string>
+    <string name="error_same_account_transfer">Cannot transfer to the same account</string>
+    <string name="data_loss_warning">All financial data is stored locally on your device only. Uninstalling the app without a backup will permanently delete your records.</string>
+    <string name="biometric_prompt_title">Unlock ELBAGORRY Money</string>
+    <string name="biometric_prompt_subtitle">Authenticate to access your financial vault</string>
+    <string name="notification_channel_name">ELBAGORRY Money Alerts</string>
+    <string name="notification_channel_desc">Reminders for installments, bills, budgets, and salaries</string>
+    <string name="smart_reader_service_label">ELBAGORRY Money Financial Notification Reader</string>
+</resources>

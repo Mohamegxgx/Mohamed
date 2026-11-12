@@ -1,0 +1,6 @@
+{
+  "name": "ELBAGORRY Money",
+  "description": "تطبيق إدارة مالية شخصية متكامل باللغة العربية مع دعم RTL، قاعدة بيانات Room، محرك حسابات دقيق، ميزانيات، أهداف ادخار، أقساط، ديون، تحليلات محلية، إشعارات، ونسخ احتياطي.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
