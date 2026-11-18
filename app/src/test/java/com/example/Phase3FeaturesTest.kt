@@ -2,11 +2,16 @@ package com.example
 
 import android.content.Context
 import android.content.Intent
+import androidx.activity.ComponentActivity
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.isSelected
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
@@ -15,6 +20,7 @@ import androidx.compose.ui.unit.dp
 import androidx.glance.appwidget.testing.unit.runGlanceAppWidgetUnitTest
 import androidx.glance.testing.unit.hasTestTag as glanceHasTestTag
 import androidx.glance.testing.unit.hasText as glanceHasText
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.test.core.app.ApplicationProvider
 import com.example.data.local.AppDatabase
 import com.example.data.local.entity.AccountEntity
@@ -38,6 +44,8 @@ import com.example.notifications.FinancialSummaryBuilder
 import com.example.notifications.FinancialSummarySnapshot
 import com.example.notifications.NotificationActionReceiver
 import com.example.notifications.NotificationHelper
+import com.example.ui.theme.ElbagorryMoneyTheme
+import com.example.ui.viewmodel.MainViewModel
 import com.example.widget.ElbagorryWidgetContent
 import com.example.widget.WidgetSnapshot
 import com.example.widget.computeWidgetSnapshot
@@ -58,7 +66,7 @@ import org.robolectric.annotation.Config
 class Phase3FeaturesTest {
 
     @get:Rule
-    val composeTestRule = createAndroidComposeRule<MainActivity>()
+    val composeTestRule = createAndroidComposeRule<ComponentActivity>()
 
     @Test
     fun `computeWidgetSnapshot computes net balance today spend month income and pending count`() {
@@ -281,11 +289,40 @@ class Phase3FeaturesTest {
     @Test
     fun `settings screen switches theme preset persists preference and configures summary frequency`() {
         val app = ApplicationProvider.getApplicationContext<ElbagorryMoneyApp>()
-        composeTestRule.waitForIdle()
+        composeTestRule.setContent {
+            val vm = remember {
+                MainViewModel(
+                    repository = app.repository,
+                    prefsRepo = app.preferencesRepository,
+                    backupManager = app.backupManager,
+                    smartReaderProcessor = app.smartReaderProcessor,
+                    appContext = app
+                )
+            }
+            val uiState by vm.uiState.collectAsStateWithLifecycle()
+            ElbagorryMoneyTheme(
+                themeMode = uiState.preferences.themeMode,
+                themePreset = uiState.preferences.themePreset,
+                language = uiState.preferences.language
+            ) {
+                ElbagorryMoneyRoot(viewModel = vm)
+            }
+        }
+        composeTestRule.waitUntil(5_000L) {
+            composeTestRule.onAllNodesWithTag("nav_settings_btn").fetchSemanticsNodes().isNotEmpty()
+        }
 
         composeTestRule.onNodeWithTag("nav_settings_btn").assertExists().performClick()
-        composeTestRule.waitForIdle()
+        composeTestRule.waitUntil(5_000L) {
+            composeTestRule.onAllNodesWithTag("sync_to_cloud_btn").fetchSemanticsNodes().isNotEmpty()
+        }
+        composeTestRule.onNodeWithTag("settings_lazy_list").performScrollToNode(hasTestTag("sync_to_cloud_btn"))
+        composeTestRule.onNodeWithTag("sync_to_cloud_btn").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("settings_lazy_list").performScrollToNode(hasTestTag("google_sign_out_btn"))
+        composeTestRule.onNodeWithTag("google_sign_out_btn").assertIsDisplayed()
 
+        composeTestRule.onNodeWithTag("settings_lazy_list").performScrollToNode(hasTestTag("theme_preset_royal_sapphire"))
+        composeTestRule.waitForIdle()
         composeTestRule.onNodeWithTag("theme_preset_royal_sapphire").assertExists().performClick()
         composeTestRule.waitUntil(timeoutMillis = 5_000L) {
             composeTestRule
@@ -298,7 +335,7 @@ class Phase3FeaturesTest {
         val savedPreset = runBlocking { app.preferencesRepository.preferences.first().themePreset }
         assertEquals(ThemePreset.ROYAL_SAPPHIRE, savedPreset)
 
-        composeTestRule.onNode(hasScrollAction()).performScrollToNode(hasTestTag("summary_freq_weekly"))
+        composeTestRule.onNodeWithTag("settings_lazy_list").performScrollToNode(hasTestTag("summary_freq_weekly"))
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithTag("summary_freq_weekly").performClick()
         composeTestRule.waitUntil(timeoutMillis = 5_000L) {
@@ -312,7 +349,7 @@ class Phase3FeaturesTest {
         val savedFreq = runBlocking { app.preferencesRepository.preferences.first().summaryFrequency }
         assertEquals(SummaryFrequency.WEEKLY, savedFreq)
 
-        composeTestRule.onNode(hasScrollAction()).performScrollToNode(hasTestTag("send_summary_now_btn"))
+        composeTestRule.onNodeWithTag("settings_lazy_list").performScrollToNode(hasTestTag("send_summary_now_btn"))
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithTag("send_summary_now_btn").assertExists().performClick()
         composeTestRule.waitForIdle()

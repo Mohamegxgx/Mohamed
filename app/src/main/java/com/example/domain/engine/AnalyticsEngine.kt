@@ -11,6 +11,7 @@ import com.example.domain.model.InsightSeverity
 import com.example.domain.model.SmartInsight
 import com.example.domain.model.TimeFilter
 import com.example.domain.model.TransactionType
+import com.example.domain.model.WeeklySpendComparisonPoint
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.text.SimpleDateFormat
@@ -95,6 +96,12 @@ object AnalyticsEngine {
             FinancialEngine.computePercent(monthIncome - monthExpense, monthIncome)
         } else 0.0
 
+        val weeklyComparison = buildWeeklyComparison(
+            monthExpenseTx = monthExpenseTx,
+            prevMonthExpenseTx = prevMonthTx.filter { it.type == TransactionType.EXPENSE },
+            txAmt = ::txAmt
+        )
+
         val insights = buildLocalSmartInsights(
             monthIncome = monthIncome,
             monthExpense = monthExpense,
@@ -106,6 +113,8 @@ object AnalyticsEngine {
             budgets = budgets,
             transactions = transactions,
             installments = installments,
+            accounts = accounts,
+            targetCurrency = targetCurrency,
             nowMillis = nowMillis
         )
 
@@ -122,8 +131,37 @@ object AnalyticsEngine {
             highestSpendDayAmountPiasters = peakAmount,
             savingsRatePercent = savingsRate,
             projectedEndOfMonthBalancePiasters = projectedEndOfMonthBalance,
-            insights = insights
+            insights = insights,
+            weeklyComparison = weeklyComparison
         )
+    }
+
+    private fun buildWeeklyComparison(
+        monthExpenseTx: List<TransactionEntity>,
+        prevMonthExpenseTx: List<TransactionEntity>,
+        txAmt: (TransactionEntity) -> Long
+    ): List<WeeklySpendComparisonPoint> {
+        fun weekBucket(timestampMillis: Long): Int {
+            val day = Calendar.getInstance().apply { timeInMillis = timestampMillis }.get(Calendar.DAY_OF_MONTH)
+            return when {
+                day <= 7 -> 0
+                day <= 14 -> 1
+                day <= 21 -> 2
+                else -> 3
+            }
+        }
+        val currBuckets = LongArray(4)
+        val prevBuckets = LongArray(4)
+        monthExpenseTx.forEach { tx -> currBuckets[weekBucket(tx.timestampMillis)] += txAmt(tx) }
+        prevMonthExpenseTx.forEach { tx -> prevBuckets[weekBucket(tx.timestampMillis)] += txAmt(tx) }
+        return (0..3).map { idx ->
+            WeeklySpendComparisonPoint(
+                weekLabelAr = "أسبوع ${idx + 1}",
+                weekLabelEn = "W${idx + 1}",
+                currentMonthSpendPiasters = currBuckets[idx],
+                previousMonthSpendPiasters = prevBuckets[idx]
+            )
+        }
     }
 
     private fun buildLocalSmartInsights(
@@ -137,6 +175,8 @@ object AnalyticsEngine {
         budgets: List<BudgetEntity>,
         transactions: List<TransactionEntity>,
         installments: List<InstallmentEntity>,
+        accounts: List<AccountEntity>,
+        targetCurrency: String,
         nowMillis: Long
     ): List<SmartInsight> {
         val insights = mutableListOf<SmartInsight>()
@@ -167,9 +207,16 @@ object AnalyticsEngine {
             }
         }
 
-        // 2. Budget warnings (>= 80% or exceeded)
+        // 2. Budget warnings (>= 80%, exceeded, or early burn-rate pace projection)
         val currentYm = DateRangeResolver.currentYearMonth(nowMillis)
-        val budgetEvals = FinancialEngine.evaluateBudgets(budgets, transactions, currentYm, nowMillis)
+        val budgetEvals = FinancialEngine.evaluateBudgets(
+            budgets = budgets,
+            transactions = transactions,
+            currentYearMonth = currentYm,
+            nowMillis = nowMillis,
+            accounts = accounts,
+            targetCurrency = targetCurrency
+        )
         budgetEvals.forEach { eval ->
             if (eval.isExceeded) {
                 insights += SmartInsight(
@@ -187,6 +234,18 @@ object AnalyticsEngine {
                     titleEn = "Approaching ${eval.name} budget",
                     detailAr = "استهلكت ${MoneyFormatter.formatPercent(eval.usagePercent)} من ميزانية ${eval.name}.",
                     detailEn = "You used ${MoneyFormatter.formatPercent(eval.usagePercent)} of ${eval.name} budget.",
+                    severity = InsightSeverity.WARNING
+                )
+            } else if (eval.burnRateWarning) {
+                val depDay = eval.estimatedDepletionDay?.let { "يوم $it" } ?: "قبل نهاية الشهر"
+                val depDayEn = eval.estimatedDepletionDay?.let { "around day $it" } ?: "before month end"
+                val capAr = MoneyFormatter.formatPiasters(eval.recommendedDailyCapPiasters, currency = targetCurrency)
+                insights += SmartInsight(
+                    id = "budget_burn_${eval.budgetId}",
+                    titleAr = "معدل صرف سريع في ${eval.name}",
+                    titleEn = "Fast burn rate on ${eval.name}",
+                    detailAr = "بالمعدل الحالي قد تنفد ميزانية ${eval.name} $depDay؛ يُنصح بحد يومي $capAr.",
+                    detailEn = "At current pace, ${eval.name} may deplete $depDayEn; recommended daily cap is $capAr.",
                     severity = InsightSeverity.WARNING
                 )
             }

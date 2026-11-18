@@ -23,6 +23,7 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Receipt
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material3.Surface
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -53,7 +54,7 @@ import com.example.ui.components.FinancialCard
 import com.example.ui.components.MoneyText
 import com.example.ui.components.formatReadableDate
 import com.example.ui.theme.CoralExpense
-import com.example.ui.theme.EmeraldPrimary
+import com.example.ui.theme.semanticPositiveColor
 import com.example.ui.viewmodel.MainUiState
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -65,6 +66,7 @@ fun ReceiptsVaultScreen(
 ) {
     val lang = state.preferences.language
     val hide = state.preferences.hideAmounts
+    val positiveColor = semanticPositiveColor()
     val accountMap = remember(state.accounts) { state.accounts.associateBy { it.id } }
     var query by remember { mutableStateOf("") }
 
@@ -105,6 +107,47 @@ fun ReceiptsVaultScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
+            val totalReceiptPiasters = remember(receiptTransactions) { receiptTransactions.sumOf { it.amountPiasters } }
+            FinancialCard(
+                elevated = true,
+                borderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f),
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            text = AppStrings.text("إجمالي الإيصالات المؤرشفة", "Archived Receipts Total", lang),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        MoneyText(
+                            piasters = totalReceiptPiasters,
+                            lang = lang,
+                            hideAmounts = hide,
+                            currency = state.preferences.currencyCode,
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+                    ) {
+                        Text(
+                            text = "${receiptTransactions.size}",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                        )
+                    }
+                }
+            }
+
             OutlinedTextField(
                 value = query,
                 onValueChange = { query = it },
@@ -122,7 +165,7 @@ fun ReceiptsVaultScreen(
                 singleLine = true,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                    .padding(horizontal = 16.dp, vertical = 6.dp)
                     .testTag("receipts_search_input")
             )
 
@@ -156,7 +199,7 @@ fun ReceiptsVaultScreen(
                         val account = accountMap[tx.accountId]
                         val currency = account?.currency ?: state.preferences.currencyCode
                         val accent = when (tx.type) {
-                            TransactionType.INCOME -> EmeraldPrimary
+                            TransactionType.INCOME -> positiveColor
                             TransactionType.EXPENSE -> CoralExpense
                             else -> MaterialTheme.colorScheme.primary
                         }

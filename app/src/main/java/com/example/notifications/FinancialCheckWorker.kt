@@ -38,8 +38,9 @@ class FinancialCheckWorker(
             val now = System.currentTimeMillis()
 
             repo.ensureSeeded()
-            // 1. Safely execute due recurring rules with unique cycle idempotency
+            // 1. Safely execute due recurring rules & certificate yields with unique cycle idempotency
             repo.executeDueRecurringRules(now)
+            repo.executeDueCertificates(now)
 
             val existingNotifications = repo.getAllNotificationsOnce()
             val oneDayAgo = now - 24L * 60L * 60L * 1000L

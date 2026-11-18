@@ -1,12 +1,21 @@
 package com.example.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -23,27 +32,21 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.AccountBalanceWallet
+import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.AutoAwesome
-import androidx.compose.material.icons.rounded.CalendarMonth
+import androidx.compose.material.icons.rounded.AutoGraph
 import androidx.compose.material.icons.rounded.Category
 import androidx.compose.material.icons.rounded.CreditCard
-import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Notifications
-import androidx.compose.material.icons.rounded.Percent
-import androidx.compose.material.icons.rounded.PieChart
-import androidx.compose.material.icons.rounded.Savings
-import androidx.compose.material.icons.rounded.Schedule
-import androidx.compose.material.icons.automirrored.rounded.TrendingUp
 import androidx.compose.material.icons.rounded.Settings
-import com.example.domain.model.PendingStatus
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DateRangePicker
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -60,30 +63,34 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.example.R
 import com.example.domain.engine.MoneyFormatter
+import com.example.domain.model.AppLanguage
 import com.example.domain.model.InsightSeverity
+import com.example.domain.model.PendingStatus
 import com.example.domain.model.TimeFilter
 import com.example.domain.model.TimeRange
 import com.example.ui.components.AppStrings
-import com.example.ui.components.CashFlowBarChart
-import com.example.ui.components.CategoryDonutChart
-import com.example.ui.components.EmptyStateCard
 import com.example.ui.components.FinancialCard
+import com.example.ui.components.FinancialHealthPulseCard
 import com.example.ui.components.HeroBalanceCard
 import com.example.ui.components.IncomeVsExpenseBarChart
-import com.example.ui.components.KpiMetricTile
 import com.example.ui.components.TimeFilterChipsBar
-import com.example.ui.components.TrendLineChart
 import com.example.ui.theme.CoralExpense
-import com.example.ui.theme.EmeraldPrimary
 import com.example.ui.theme.GoldAccent
+import com.example.ui.theme.LocalThemePresetSpec
 import com.example.ui.theme.RobotoMonoFontFamily
 import com.example.ui.theme.SkyCyan
 import com.example.ui.theme.parseHexColor
+import com.example.ui.theme.semanticPositiveColor
 import com.example.ui.viewmodel.MainUiState
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -92,13 +99,15 @@ fun DashboardScreen(
     state: MainUiState,
     onSelectTimeFilter: (TimeFilter, TimeRange?) -> Unit,
     onTogglePrivacy: () -> Unit,
-    onNavigateCalendar: () -> Unit,
-    onNavigateReports: () -> Unit,
+    onNavigateCalendar: () -> Unit = {},
+    onNavigateReports: () -> Unit = {},
     onNavigateNotifications: () -> Unit,
     onNavigateSettings: () -> Unit,
     onOpenAnalytics: () -> Unit,
     onNavigateSmartReader: () -> Unit = {},
     onNavigateCategories: () -> Unit = {},
+    onNavigateAiAdvisor: () -> Unit = {},
+    onNavigateBnpl: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val lang = state.preferences.language
@@ -108,17 +117,22 @@ fun DashboardScreen(
     val unreadNotifications = state.notifications.count { !it.isRead }
     val pendingReaderCount = state.pendingTransactions.count { it.status == PendingStatus.PENDING }
     var showCustomRangePicker by remember { mutableStateOf(false) }
+    val positiveColor = semanticPositiveColor()
+    val themeSpec = LocalThemePresetSpec.current
 
+    BoxWithConstraints(modifier = modifier.fillMaxSize()) {
+    val isWide = maxWidth >= 600.dp
     LazyColumn(
-        modifier = modifier.fillMaxSize().testTag("dashboard_lazy_list"),
+        modifier = Modifier.fillMaxSize().testTag("dashboard_lazy_list"),
         contentPadding = PaddingValues(top = 4.dp, bottom = 108.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        item {
+        // 1. Hydrogen Flagship Top Header (Crystal Core Orb + Brand + Notifications & Settings)
+        item(key = "dash_header") {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                    .padding(horizontal = 16.dp, vertical = 6.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -130,15 +144,22 @@ fun DashboardScreen(
                     Box(
                         modifier = Modifier
                             .size(40.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)),
+                            .clip(CircleShape)
+                            .border(
+                                width = 1.25.dp,
+                                brush = Brush.linearGradient(themeSpec.prismGlowColors),
+                                shape = CircleShape
+                            )
+                            .padding(2.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(
-                            imageVector = Icons.Rounded.AccountBalanceWallet,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(22.dp)
+                        Image(
+                            painter = painterResource(id = R.drawable.img_hydrogen_ai_core_1794844129687),
+                            contentDescription = "ELBAGORRY Hydrogen Core",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .clip(CircleShape)
                         )
                     }
                     Column {
@@ -146,22 +167,19 @@ fun DashboardScreen(
                             text = "ELBAGORRY Money",
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onBackground
+                            color = MaterialTheme.colorScheme.onBackground,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                         Text(
-                            text = AppStrings.text("مركز التحكم المالي", "Financial Control Center", lang),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            text = AppStrings.text("محرك Gemini 4 Hydrogen", "Gemini 4 Hydrogen Suite", lang),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            maxLines = 1
                         )
                     }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = onNavigateCalendar, modifier = Modifier.testTag("nav_calendar_btn")) {
-                        Icon(Icons.Rounded.CalendarMonth, contentDescription = AppStrings.text("التقويم المالي", "Calendar", lang))
-                    }
-                    IconButton(onClick = onNavigateReports, modifier = Modifier.testTag("nav_reports_btn")) {
-                        Icon(Icons.Rounded.Description, contentDescription = AppStrings.text("التقارير", "Reports", lang))
-                    }
                     IconButton(onClick = onNavigateNotifications, modifier = Modifier.testTag("nav_notifications_btn")) {
                         BadgedBox(
                             badge = {
@@ -180,8 +198,8 @@ fun DashboardScreen(
             }
         }
 
-        // Time Filter Chips
-        item {
+        // 2. Period Filter Chips
+        item(key = "dash_time_filters") {
             TimeFilterChipsBar(
                 selectedFilter = state.timeFilter,
                 lang = lang,
@@ -195,8 +213,8 @@ fun DashboardScreen(
             )
         }
 
-        // Hero Net Balance Card
-        item {
+        // 3. Hero Balance Card
+        item(key = "dash_hero_balance") {
             HeroBalanceCard(
                 title = AppStrings.text("صافي الرصيد الحالي", "Net Current Balance", lang),
                 balancePiasters = m.netBalancePiasters,
@@ -211,19 +229,286 @@ fun DashboardScreen(
             )
         }
 
-        // Smart Money Reader & Categories Quick Access Row
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+        // 4. Compact Smart Hub (AI Coach CTA + Smart Reader & Categories row)
+        item(key = "dashboard_ai_coach_card_item") {
+            Column(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
+                val prismBorder = Brush.linearGradient(
+                    colors = listOf(
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.60f),
+                        MaterialTheme.colorScheme.secondary.copy(alpha = 0.55f),
+                        positiveColor.copy(alpha = 0.50f)
+                    )
+                )
+                Surface(
+                    onClick = onNavigateAiAdvisor,
+                    shape = MaterialTheme.shapes.medium,
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    border = BorderStroke(1.1.dp, prismBorder),
+                    shadowElevation = 4.dp,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("dashboard_ai_coach_card")
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(
+                                Brush.linearGradient(
+                                    colors = listOf(
+                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
+                                        MaterialTheme.colorScheme.surfaceContainerHigh,
+                                        MaterialTheme.colorScheme.secondary.copy(alpha = 0.18f)
+                                    )
+                                )
+                            )
+                            .padding(16.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(46.dp)
+                                        .clip(CircleShape)
+                                        .border(1.2.dp, prismBorder, CircleShape),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Image(
+                                        painter = painterResource(id = R.drawable.img_hydrogen_ai_core_1794844129687),
+                                        contentDescription = null,
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .clip(CircleShape)
+                                    )
+                                }
+                                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Text(
+                                            text = AppStrings.text("الشات الذكي والمنسق التلقائي", "AI Chat & Auto-Organizer", lang),
+                                            style = MaterialTheme.typography.titleSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f, fill = false)
+                                        )
+                                    }
+                                    Text(
+                                        text = AppStrings.text(
+                                            "Gemini 4 Hydrogen + محلي بدون نت",
+                                            "Gemini 4 Hydrogen + Offline AI",
+                                            lang
+                                        ),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = positiveColor,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                            Spacer(Modifier.width(8.dp))
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(
+                                        Brush.linearGradient(
+                                            listOf(
+                                                MaterialTheme.colorScheme.primary,
+                                                MaterialTheme.colorScheme.secondary
+                                            )
+                                        )
+                                    )
+                                    .padding(horizontal = 12.dp, vertical = 7.dp)
+                            ) {
+                                Text(
+                                    text = AppStrings.text("دردش الآن", "Open", lang),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    FinancialCard(
+                        modifier = Modifier
+                            .weight(1.3f)
+                            .testTag("dashboard_smart_reader_card"),
+                        borderColor = (if (pendingReaderCount > 0) GoldAccent else MaterialTheme.colorScheme.outline).copy(alpha = 0.25f),
+                        onClick = onNavigateSmartReader
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .clip(CircleShape)
+                                        .background(SkyCyan.copy(alpha = 0.14f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(Icons.Rounded.AutoAwesome, contentDescription = null, tint = SkyCyan, modifier = Modifier.size(17.dp))
+                                }
+                                Column {
+                                    Text(
+                                        text = AppStrings.text("القارئ الذكي", "Smart Reader", lang),
+                                        style = MaterialTheme.typography.labelLarge,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1
+                                    )
+                                    Text(
+                                        text = if (pendingReaderCount > 0) {
+                                            AppStrings.text("$pendingReaderCount للمراجعة", "$pendingReaderCount pending", lang)
+                                        } else {
+                                            AppStrings.text("قراءة الرسائل", "Parse SMS", lang)
+                                        },
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = if (pendingReaderCount > 0) GoldAccent else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1
+                                    )
+                                }
+                            }
+                            AnimatedVisibility(
+                                visible = pendingReaderCount > 0,
+                                enter = scaleIn() + fadeIn(),
+                                exit = scaleOut() + fadeOut()
+                            ) {
+                                Badge { Text("$pendingReaderCount") }
+                            }
+                        }
+                    }
+
+                    FinancialCard(
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("dashboard_categories_card"),
+                        onClick = onNavigateCategories
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Rounded.Category, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(17.dp))
+                            }
+                            Column {
+                                Text(
+                                    text = AppStrings.text("الفئات", "Categories", lang),
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1
+                                )
+                                Text(
+                                    text = "${state.categories.size}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 5 & 6. Period Cashflow Summary + Financial Health Pulse (Side-by-Side on wide screens)
+        if (isWide) {
+            item(key = "dash_wide_cashflow_and_health") {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    Box(modifier = Modifier.weight(1f)) {
+                        PeriodCashflowSummaryCard(
+                            m = m,
+                            lang = lang,
+                            hide = hide,
+                            displayCurrency = displayCurrency,
+                            positiveColor = positiveColor
+                        )
+                    }
+                    Box(modifier = Modifier.weight(1f)) {
+                        FinancialHealthPulseCard(
+                            report = state.healthReport,
+                            lang = lang,
+                            hideAmounts = hide,
+                            currencyCode = displayCurrency,
+                            onAskAiAdvisor = onNavigateAiAdvisor
+                        )
+                    }
+                }
+            }
+        } else {
+            item(key = "dash_cashflow_summary") {
+                PeriodCashflowSummaryCard(
+                    m = m,
+                    lang = lang,
+                    hide = hide,
+                    displayCurrency = displayCurrency,
+                    positiveColor = positiveColor,
+                    modifier = Modifier.padding(horizontal = 16.dp)
+                )
+            }
+
+            item(key = "health_pulse_card") {
+                FinancialHealthPulseCard(
+                    report = state.healthReport,
+                    lang = lang,
+                    hideAmounts = hide,
+                    currencyCode = displayCurrency,
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    onAskAiAdvisor = onNavigateAiAdvisor
+                )
+            }
+        }
+
+        // 7. Conditional BNPL & Deficit Pulse Card
+        item(key = "bnpl_pulse_card") {
+            val bnpl = state.bnplReport
+            val def = bnpl.deficitAnalysis
+            if (bnpl.totalCreditLimitPiasters > 0L || bnpl.activeInstallmentsCount > 0 || def.hasDeficit) {
+                val pulseColor = when {
+                    def.netMonthlySurplusOrDeficitPiasters < 0L -> CoralExpense
+                    def.hasDeficit -> GoldAccent
+                    else -> SkyCyan
+                }
                 FinancialCard(
                     modifier = Modifier
-                        .weight(1.4f)
-                        .clickable { onNavigateSmartReader() }
-                        .testTag("dashboard_smart_reader_card"),
-                    elevated = pendingReaderCount > 0,
-                    borderColor = (if (pendingReaderCount > 0) GoldAccent else MaterialTheme.colorScheme.primary).copy(alpha = 0.45f)
+                        .padding(horizontal = 16.dp)
+                        .testTag("dashboard_bnpl_pulse_card"),
+                    borderColor = pulseColor.copy(alpha = 0.35f),
+                    onClick = onNavigateBnpl
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -232,317 +517,82 @@ fun DashboardScreen(
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
                             modifier = Modifier.weight(1f)
                         ) {
-                            Icon(Icons.Rounded.AutoAwesome, contentDescription = null, tint = SkyCyan)
+                            Box(
+                                modifier = Modifier
+                                    .size(34.dp)
+                                    .clip(CircleShape)
+                                    .background(pulseColor.copy(alpha = 0.14f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Rounded.CreditCard, contentDescription = null, tint = pulseColor, modifier = Modifier.size(18.dp))
+                            }
                             Column {
                                 Text(
-                                    text = AppStrings.text("القارئ الذكي", "Smart Reader", lang),
-                                    style = MaterialTheme.typography.labelLarge,
+                                    text = AppStrings.text("تحليل برامج التقسيط والعجز", "BNPL & Deficit Analyzer", lang),
+                                    style = MaterialTheme.typography.titleSmall,
                                     fontWeight = FontWeight.Bold
                                 )
                                 Text(
-                                    text = if (pendingReaderCount > 0) {
-                                        AppStrings.text("$pendingReaderCount معلقة للمراجعة", "$pendingReaderCount pending", lang)
-                                    } else {
-                                        AppStrings.text("تحليل الرسائل ماليًا", "Parse alerts", lang)
-                                    },
+                                    text = if (lang == AppLanguage.AR) def.headlineAr else def.headlineEn,
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = if (pendingReaderCount > 0) GoldAccent else MaterialTheme.colorScheme.onSurfaceVariant
+                                    color = pulseColor,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                             }
                         }
-                        AnimatedVisibility(
-                            visible = pendingReaderCount > 0,
-                            enter = fadeIn(),
-                            exit = fadeOut()
-                        ) {
-                            Badge { Text("$pendingReaderCount") }
-                        }
-                    }
-                }
-
-                FinancialCard(
-                    modifier = Modifier
-                        .weight(1f)
-                        .clickable { onNavigateCategories() }
-                        .testTag("dashboard_categories_card")
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(Icons.Rounded.Category, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                        Column {
-                            Text(
-                                text = AppStrings.text("الفئات", "Categories", lang),
-                                style = MaterialTheme.typography.labelLarge,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                text = "${state.categories.size}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        // 10 Key Financial Indicators (5 Clean 2-column rows)
-        item {
-            Column(
-                modifier = Modifier.padding(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                // Row 1: Total Income & Total Expenses
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    KpiMetricTile(
-                        title = AppStrings.text("إجمالي الدخل", "Total Income", lang),
-                        valueText = MoneyFormatter.formatPiasters(m.totalIncomePiasters, currency = displayCurrency, language = lang, hideAmounts = hide),
-                        icon = Icons.Rounded.ArrowDownward,
-                        accentColor = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.weight(1f).testTag("kpi_income")
-                    )
-                    KpiMetricTile(
-                        title = AppStrings.text("إجمالي المصروفات", "Total Expenses", lang),
-                        valueText = MoneyFormatter.formatPiasters(m.totalExpensesPiasters, currency = displayCurrency, language = lang, hideAmounts = hide),
-                        icon = Icons.Rounded.ArrowUpward,
-                        accentColor = CoralExpense,
-                        modifier = Modifier.weight(1f).testTag("kpi_expenses")
-                    )
-                }
-
-                // Row 2: Expense/Income Ratio & Savings Rate
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    KpiMetricTile(
-                        title = AppStrings.text("نسبة المصروفات للدخل", "Expense/Income Ratio", lang),
-                        valueText = if (hide) "••%" else MoneyFormatter.formatPercent(m.expenseToIncomeRatioPercent),
-                        icon = Icons.Rounded.Percent,
-                        accentColor = GoldAccent,
-                        modifier = Modifier.weight(1f).testTag("kpi_expense_ratio")
-                    )
-                    KpiMetricTile(
-                        title = AppStrings.text("معدل الادخار", "Savings Rate", lang),
-                        valueText = if (hide) "••%" else MoneyFormatter.formatPercent(m.savingsRatePercent),
-                        icon = Icons.Rounded.Savings,
-                        accentColor = SkyCyan,
-                        modifier = Modifier.weight(1f).testTag("kpi_savings_rate")
-                    )
-                }
-
-                // Row 3: Total Obligations & Due Amounts
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    KpiMetricTile(
-                        title = AppStrings.text("إجمالي الالتزامات", "Total Obligations", lang),
-                        valueText = MoneyFormatter.formatPiasters(m.totalObligationsPiasters, currency = displayCurrency, language = lang, hideAmounts = hide),
-                        icon = Icons.Rounded.CreditCard,
-                        accentColor = CoralExpense,
-                        modifier = Modifier.weight(1f).testTag("kpi_obligations")
-                    )
-                    KpiMetricTile(
-                        title = AppStrings.text("المبالغ المستحقة", "Amounts Due (7d)", lang),
-                        valueText = MoneyFormatter.formatPiasters(m.amountsDuePiasters, currency = displayCurrency, language = lang, hideAmounts = hide),
-                        icon = Icons.Rounded.Schedule,
-                        accentColor = GoldAccent,
-                        modifier = Modifier.weight(1f).testTag("kpi_due_amounts")
-                    )
-                }
-
-                // Row 4: Remaining Budget & Net Cash Flow (Financial Growth)
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    KpiMetricTile(
-                        title = AppStrings.text("الميزانية المتبقية", "Remaining Budget", lang),
-                        valueText = MoneyFormatter.formatPiasters(m.remainingBudgetPiasters, currency = displayCurrency, language = lang, hideAmounts = hide),
-                        icon = Icons.Rounded.PieChart,
-                        accentColor = if (m.remainingBudgetPiasters >= 0) EmeraldPrimary else CoralExpense,
-                        modifier = Modifier.weight(1f).testTag("kpi_remaining_budget")
-                    )
-                    KpiMetricTile(
-                        title = AppStrings.text("تطور الوضع (التدفق)", "Net Cash Flow", lang),
-                        valueText = MoneyFormatter.formatPiasters(m.netCashFlowPiasters, currency = displayCurrency, language = lang, hideAmounts = hide, showSign = true),
-                        icon = Icons.AutoMirrored.Rounded.TrendingUp,
-                        accentColor = if (m.netCashFlowPiasters >= 0) EmeraldPrimary else CoralExpense,
-                        modifier = Modifier.weight(1f).testTag("kpi_cash_flow")
-                    )
-                }
-
-                // Row 5: Available Funds & Allocated Savings
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    KpiMetricTile(
-                        title = AppStrings.text("الأموال المتاحة", "Available Funds", lang),
-                        valueText = MoneyFormatter.formatPiasters(m.availableFundsPiasters, currency = displayCurrency, language = lang, hideAmounts = hide),
-                        icon = Icons.Rounded.AccountBalanceWallet,
-                        accentColor = EmeraldPrimary,
-                        modifier = Modifier.weight(1f).testTag("kpi_available_funds")
-                    )
-                    KpiMetricTile(
-                        title = AppStrings.text("المدخرات المخصصة", "Savings Allocated", lang),
-                        valueText = MoneyFormatter.formatPiasters(m.allocatedSavingsPiasters, currency = displayCurrency, language = lang, hideAmounts = hide),
-                        icon = Icons.Rounded.Savings,
-                        accentColor = SkyCyan,
-                        modifier = Modifier.weight(1f).testTag("kpi_allocated_savings")
-                    )
-                }
-            }
-        }
-
-        // Smart Insights Preview
-        item {
-            val topInsight = state.analyticsSummary.insights.firstOrNull()
-            if (topInsight != null) {
-                val badgeColor = when (topInsight.severity) {
-                    InsightSeverity.POSITIVE -> EmeraldPrimary
-                    InsightSeverity.WARNING -> GoldAccent
-                    InsightSeverity.CRITICAL -> CoralExpense
-                    InsightSeverity.INFO -> SkyCyan
-                }
-                FinancialCard(
-                    modifier = Modifier
-                        .padding(horizontal = 16.dp)
-                        .clickable { onOpenAnalytics() }
-                        .testTag("dashboard_smart_insight_card"),
-                    borderColor = badgeColor.copy(alpha = 0.5f)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
                         Text(
-                            text = AppStrings.text(topInsight.titleAr, topInsight.titleEn, lang),
-                            style = MaterialTheme.typography.titleMedium,
-                            color = badgeColor
-                        )
-                        Text(
-                            text = AppStrings.text("عرض التحليلات ←", "Analytics →", lang),
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.primary
+                            text = if (hide) "••%" else MoneyFormatter.formatPercent(def.installmentsToIncomePercent),
+                            style = MaterialTheme.typography.titleMedium.copy(fontFamily = RobotoMonoFontFamily),
+                            fontWeight = FontWeight.Bold,
+                            color = pulseColor
                         )
                     }
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        text = AppStrings.text(topInsight.detailAr, topInsight.detailEn, lang),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
                 }
             }
         }
 
-        // Chart 1: Income vs Expenses
-        item {
-            FinancialCard(modifier = Modifier.padding(horizontal = 16.dp)) {
-                Text(
-                    text = AppStrings.text("الدخل مقابل المصروفات", "Income vs Expenses", lang),
-                    style = MaterialTheme.typography.titleMedium
-                )
-                Spacer(Modifier.height(12.dp))
-                IncomeVsExpenseBarChart(
-                    incomePiasters = m.totalIncomePiasters,
-                    expensePiasters = m.totalExpensesPiasters,
-                    lang = lang,
-                    hideAmounts = hide,
-                    currency = displayCurrency
-                )
-            }
-        }
-
-        // Chart 2: Monthly Financial Trend
-        item {
-            FinancialCard(modifier = Modifier.padding(horizontal = 16.dp)) {
-                Text(
-                    text = AppStrings.text("الاتجاه المالي", "Financial Trend", lang),
-                    style = MaterialTheme.typography.titleMedium
-                )
-                Spacer(Modifier.height(6.dp))
-                if (m.trendSeries.isEmpty()) {
-                    EmptyStateCard(
-                        title = AppStrings.text("لا توجد بيانات زمنية بعد", "No trend data yet", lang),
-                        subtitle = AppStrings.text("أضف معاملات لعرض المنحنى المالي", "Add transactions to view financial trend", lang)
-                    )
-                } else {
-                    TrendLineChart(points = m.trendSeries)
-                }
-            }
-        }
-
-        // Chart 3: Cash Flow Bars
-        item {
-            FinancialCard(modifier = Modifier.padding(horizontal = 16.dp)) {
-                Text(
-                    text = AppStrings.text("صافي التدفق النقدي", "Cash Flow", lang),
-                    style = MaterialTheme.typography.titleMedium
-                )
-                Spacer(Modifier.height(8.dp))
-                CashFlowBarChart(points = m.trendSeries)
-            }
-        }
-
-        // Chart 4: Expense Categories Donut
-        item {
-            FinancialCard(modifier = Modifier.padding(horizontal = 16.dp)) {
-                Text(
-                    text = AppStrings.text("توزيع فئات المصروفات", "Expense Categories", lang),
-                    style = MaterialTheme.typography.titleMedium
-                )
-                Spacer(Modifier.height(12.dp))
-                if (m.categoryBreakdown.isEmpty()) {
+        // 8. Conditional Savings Goals Progress (only shown if user has goals)
+        if (state.savingsGoals.isNotEmpty()) {
+            item(key = "dash_savings_goals") {
+                FinancialCard(modifier = Modifier.padding(horizontal = 16.dp)) {
                     Text(
-                        text = AppStrings.text("لا توجد مصروفات مسجلة في هذه الفترة.", "No expenses recorded in this period.", lang),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        text = AppStrings.text("تقدم أهداف الادخار", "Savings Progress", lang),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
                     )
-                } else {
-                    CategoryDonutChart(
-                        items = m.categoryBreakdown,
-                        lang = lang,
-                        hideAmounts = hide
-                    )
-                }
-            }
-        }
-
-        // Chart 5: Savings Progress
-        item {
-            FinancialCard(modifier = Modifier.padding(horizontal = 16.dp)) {
-                Text(
-                    text = AppStrings.text("تقدم أهداف الادخار", "Savings Progress", lang),
-                    style = MaterialTheme.typography.titleMedium
-                )
-                Spacer(Modifier.height(10.dp))
-                if (state.savingsGoals.isEmpty()) {
-                    Text(
-                        text = AppStrings.text("لم تقم بإنشاء أهداف ادخار بعد.", "No savings goals created yet.", lang),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                } else {
+                    Spacer(Modifier.height(10.dp))
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        state.savingsGoals.take(4).forEach { goal ->
+                        state.savingsGoals.take(3).forEach { goal ->
                             val ratio = if (goal.targetAmountPiasters > 0L) {
                                 (goal.savedAmountPiasters.toFloat() / goal.targetAmountPiasters.toFloat()).coerceIn(0f, 1f)
                             } else 0f
-                            val goalColor = parseHexColor(goal.colorHex, EmeraldPrimary)
+                            val animatedRatio by animateFloatAsState(
+                                targetValue = ratio,
+                                animationSpec = tween(durationMillis = 360, easing = FastOutSlowInEasing),
+                                label = "goalProgress_${goal.id}"
+                            )
+                            val goalColor = parseHexColor(goal.colorHex, positiveColor)
                             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
-                                    Text(goal.name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+                                    Text(goal.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
                                     Text(
                                         text = if (hide) "••%" else "${(ratio * 100).toInt()}%",
-                                        style = MaterialTheme.typography.labelLarge.copy(fontFamily = RobotoMonoFontFamily),
+                                        style = MaterialTheme.typography.labelMedium.copy(fontFamily = RobotoMonoFontFamily),
                                         color = goalColor
                                     )
                                 }
                                 LinearProgressIndicator(
-                                    progress = { ratio },
-                                    modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(6.dp)),
+                                    progress = { animatedRatio },
+                                    modifier = Modifier.fillMaxWidth().height(7.dp).clip(RoundedCornerShape(6.dp)),
                                     color = goalColor,
-                                    trackColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)
+                                    trackColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.20f)
                                 )
                             }
                         }
@@ -551,38 +601,114 @@ fun DashboardScreen(
             }
         }
 
-        // Accounts quick horizontal strip
-        item {
+        // 9. Smart Insights + Link to Deep Analytics (No duplicate chart stack)
+        item(key = "dash_analytics_cta") {
+            val topInsight = state.analyticsSummary.insights.firstOrNull()
+            val accentColor = when (topInsight?.severity) {
+                InsightSeverity.POSITIVE -> positiveColor
+                InsightSeverity.WARNING -> GoldAccent
+                InsightSeverity.CRITICAL -> CoralExpense
+                else -> SkyCyan
+            }
+            FinancialCard(
+                modifier = Modifier
+                    .padding(horizontal = 16.dp)
+                    .testTag("dashboard_smart_insight_card"),
+                borderColor = accentColor.copy(alpha = 0.30f),
+                onClick = onOpenAnalytics
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(Icons.Rounded.AutoGraph, contentDescription = null, tint = accentColor, modifier = Modifier.size(20.dp))
+                        Text(
+                            text = if (topInsight != null) {
+                                AppStrings.text(topInsight.titleAr, topInsight.titleEn, lang)
+                            } else {
+                                AppStrings.text("الرسوم البيانية والتحليلات الكاملة", "Full Charts & Deep Analytics", lang)
+                            },
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = accentColor,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            text = AppStrings.text("التحليلات", "Analytics", lang),
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Rounded.ArrowForward,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+                if (topInsight != null) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = AppStrings.text(topInsight.detailAr, topInsight.detailEn, lang),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+        }
+
+        // 10. Clean Borderless Accounts Strip
+        item(key = "dash_accounts_strip") {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    text = AppStrings.text("الحسابات", "Accounts", lang),
+                    text = AppStrings.text("الحسابات النشطة", "Active Accounts", lang),
                     style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(horizontal = 16.dp)
                 )
                 LazyRow(
                     contentPadding = PaddingValues(horizontal = 16.dp),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    items(state.accounts.filter { !it.isArchived }) { acc ->
+                    items(state.accounts.filter { !it.isArchived }, key = { it.id }) { acc ->
+                        val accColor = parseHexColor(acc.colorHex)
                         Surface(
                             shape = MaterialTheme.shapes.medium,
                             color = MaterialTheme.colorScheme.surfaceVariant,
-                            modifier = Modifier.width(170.dp)
+                            modifier = Modifier.width(168.dp)
                         ) {
                             Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     Box(
                                         modifier = Modifier
-                                            .size(10.dp)
+                                            .size(9.dp)
                                             .clip(CircleShape)
-                                            .background(parseHexColor(acc.colorHex))
+                                            .background(accColor)
                                     )
-                                    Text(acc.name, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+                                    Text(
+                                        text = acc.name,
+                                        style = MaterialTheme.typography.labelLarge,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
                                 }
                                 Text(
                                     text = MoneyFormatter.formatPiasters(acc.currentBalancePiasters, acc.currency, lang, hide),
                                     style = MaterialTheme.typography.titleMedium.copy(fontFamily = RobotoMonoFontFamily),
-                                    fontWeight = FontWeight.Bold
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                             }
                         }
@@ -590,6 +716,7 @@ fun DashboardScreen(
                 }
             }
         }
+    }
     }
 
     if (showCustomRangePicker) {
@@ -618,5 +745,152 @@ fun DashboardScreen(
         ) {
             DateRangePicker(state = pickerState, modifier = Modifier.height(420.dp))
         }
+    }
+}
+
+@Composable
+private fun PeriodCashflowSummaryCard(
+    m: com.example.domain.model.DashboardMetrics,
+    lang: AppLanguage,
+    hide: Boolean,
+    displayCurrency: String,
+    positiveColor: Color,
+    modifier: Modifier = Modifier
+) {
+    FinancialCard(modifier = modifier) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = AppStrings.text("ملخص التدفق للفترة", "Period Cashflow", lang),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+            Surface(
+                color = (if (m.netCashFlowPiasters >= 0L) positiveColor else CoralExpense).copy(alpha = 0.14f),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Text(
+                    text = MoneyFormatter.formatPiasters(
+                        m.netCashFlowPiasters,
+                        currency = displayCurrency,
+                        language = lang,
+                        hideAmounts = hide,
+                        showSign = true
+                    ),
+                    style = MaterialTheme.typography.labelMedium.copy(fontFamily = RobotoMonoFontFamily),
+                    fontWeight = FontWeight.Bold,
+                    color = if (m.netCashFlowPiasters >= 0L) positiveColor else CoralExpense,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                )
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Icon(Icons.Rounded.ArrowDownward, contentDescription = null, tint = positiveColor, modifier = Modifier.size(14.dp))
+                    Text(
+                        text = AppStrings.text("الدخل", "Income", lang),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = MoneyFormatter.formatPiasters(m.totalIncomePiasters, currency = displayCurrency, language = lang, hideAmounts = hide),
+                    style = MaterialTheme.typography.titleMedium.copy(fontFamily = RobotoMonoFontFamily),
+                    fontWeight = FontWeight.Bold,
+                    color = positiveColor,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Icon(Icons.Rounded.ArrowUpward, contentDescription = null, tint = CoralExpense, modifier = Modifier.size(14.dp))
+                    Text(
+                        text = AppStrings.text("المصروفات", "Expenses", lang),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = MoneyFormatter.formatPiasters(m.totalExpensesPiasters, currency = displayCurrency, language = lang, hideAmounts = hide),
+                    style = MaterialTheme.typography.titleMedium.copy(fontFamily = RobotoMonoFontFamily),
+                    fontWeight = FontWeight.Bold,
+                    color = CoralExpense,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+        IncomeVsExpenseBarChart(
+            incomePiasters = m.totalIncomePiasters,
+            expensePiasters = m.totalExpensesPiasters,
+            lang = lang,
+            hideAmounts = hide,
+            currency = displayCurrency
+        )
+
+        HorizontalDivider(
+            modifier = Modifier.padding(vertical = 10.dp),
+            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.16f)
+        )
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            CompactInlineMetric(
+                label = AppStrings.text("الميزانية المتبقية", "Budget Left", lang),
+                value = MoneyFormatter.formatPiasters(m.remainingBudgetPiasters, currency = displayCurrency, language = lang, hideAmounts = hide),
+                valueColor = if (m.remainingBudgetPiasters >= 0) positiveColor else CoralExpense
+            )
+            CompactInlineMetric(
+                label = AppStrings.text("مستحقات (7 أيام)", "Due (7d)", lang),
+                value = MoneyFormatter.formatPiasters(m.amountsDuePiasters, currency = displayCurrency, language = lang, hideAmounts = hide),
+                valueColor = if (m.amountsDuePiasters > 0L) GoldAccent else MaterialTheme.colorScheme.onSurface
+            )
+            CompactInlineMetric(
+                label = AppStrings.text("الادخار", "Savings Rate", lang),
+                value = if (hide) "••%" else MoneyFormatter.formatPercent(m.savingsRatePercent),
+                valueColor = MaterialTheme.colorScheme.primary
+            )
+        }
+    }
+}
+
+@Composable
+private fun CompactInlineMetric(
+    label: String,
+    value: String,
+    valueColor: androidx.compose.ui.graphics.Color
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.labelLarge.copy(fontFamily = RobotoMonoFontFamily),
+            fontWeight = FontWeight.Bold,
+            color = valueColor,
+            maxLines = 1
+        )
     }
 }

@@ -9,6 +9,8 @@ import androidx.room.TypeConverters
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.example.data.local.dao.AccountDao
+import com.example.data.local.dao.AiChatDao
+import com.example.data.local.dao.BnplProgramDao
 import com.example.data.local.dao.BudgetDao
 import com.example.data.local.dao.CategoryDao
 import com.example.data.local.dao.DebtDao
@@ -21,9 +23,13 @@ import com.example.data.local.dao.MerchantRuleDao
 import com.example.data.local.dao.NotificationDao
 import com.example.data.local.dao.PendingTransactionDao
 import com.example.data.local.dao.RecurringRuleDao
+import com.example.data.local.dao.SavingsCertificateDao
 import com.example.data.local.dao.SavingsGoalDao
 import com.example.data.local.dao.TransactionDao
 import com.example.data.local.entity.AccountEntity
+import com.example.data.local.entity.AiChatMessageEntity
+import com.example.data.local.entity.AiChatSessionEntity
+import com.example.data.local.entity.BnplProgramEntity
 import com.example.data.local.entity.BudgetEntity
 import com.example.data.local.entity.CategoryEntity
 import com.example.data.local.entity.DebtEntity
@@ -36,6 +42,7 @@ import com.example.data.local.entity.MerchantRuleEntity
 import com.example.data.local.entity.NotificationEntity
 import com.example.data.local.entity.PendingTransactionEntity
 import com.example.data.local.entity.RecurringRuleEntity
+import com.example.data.local.entity.SavingsCertificateEntity
 import com.example.data.local.entity.SavingsGoalEntity
 import com.example.data.local.entity.TransactionEntity
 import com.example.domain.model.AccountType
@@ -50,8 +57,10 @@ import com.example.domain.model.InstallmentStatus
 import com.example.domain.model.MessageChannel
 import com.example.domain.model.MessageOperationKind
 import com.example.domain.model.NotificationType
+import com.example.domain.model.PayoutCycle
 import com.example.domain.model.PendingStatus
 import com.example.domain.model.RecurringFrequency
+import com.example.domain.model.SavingsAssetKind
 import com.example.domain.model.TransactionSource
 import com.example.domain.model.TransactionType
 import kotlinx.coroutines.CoroutineScope
@@ -106,6 +115,14 @@ class RoomConverters {
 
     @TypeConverter fun fromNotificationType(value: NotificationType): String = value.name
     @TypeConverter fun toNotificationType(value: String): NotificationType = NotificationType.valueOf(value)
+
+    @TypeConverter fun fromSavingsAssetKind(value: SavingsAssetKind): String = value.name
+    @TypeConverter fun toSavingsAssetKind(value: String): SavingsAssetKind =
+        runCatching { SavingsAssetKind.valueOf(value) }.getOrDefault(SavingsAssetKind.BANK_CERTIFICATE)
+
+    @TypeConverter fun fromPayoutCycle(value: PayoutCycle): String = value.name
+    @TypeConverter fun toPayoutCycle(value: String): PayoutCycle =
+        runCatching { PayoutCycle.valueOf(value) }.getOrDefault(PayoutCycle.MONTHLY)
 }
 
 @Database(
@@ -124,9 +141,13 @@ class RoomConverters {
         ImportedMessageEntity::class,
         PendingTransactionEntity::class,
         ImportHistoryEntity::class,
-        MerchantRuleEntity::class
+        MerchantRuleEntity::class,
+        BnplProgramEntity::class,
+        AiChatSessionEntity::class,
+        AiChatMessageEntity::class,
+        SavingsCertificateEntity::class
     ],
-    version = 3,
+    version = 6,
     exportSchema = false
 )
 @TypeConverters(RoomConverters::class)
@@ -146,6 +167,9 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun pendingTransactionDao(): PendingTransactionDao
     abstract fun importHistoryDao(): ImportHistoryDao
     abstract fun merchantRuleDao(): MerchantRuleDao
+    abstract fun bnplProgramDao(): BnplProgramDao
+    abstract fun aiChatDao(): AiChatDao
+    abstract fun savingsCertificateDao(): SavingsCertificateDao
 
     companion object {
         @Volatile
@@ -267,6 +291,101 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS bnpl_programs (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        providerCode TEXT NOT NULL,
+                        nameAr TEXT NOT NULL,
+                        nameEn TEXT NOT NULL,
+                        creditLimitPiasters INTEGER NOT NULL DEFAULT 0,
+                        manualUsedPiasters INTEGER NOT NULL DEFAULT 0,
+                        defaultAnnualInterestPercent REAL NOT NULL DEFAULT 0.0,
+                        colorHex TEXT NOT NULL DEFAULT '#38BDF8',
+                        isEnabled INTEGER NOT NULL DEFAULT 1,
+                        notes TEXT NOT NULL DEFAULT '',
+                        createdAt INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_bnpl_programs_providerCode ON bnpl_programs(providerCode)")
+                db.execSQL("ALTER TABLE installments ADD COLUMN bnplProgramId INTEGER")
+                db.execSQL("ALTER TABLE installments ADD COLUMN principalAmountPiasters INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_installments_bnplProgramId ON installments(bnplProgramId)")
+            }
+        }
+
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS ai_chat_sessions (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        title TEXT NOT NULL,
+                        lastMessagePreview TEXT NOT NULL DEFAULT '',
+                        messageCount INTEGER NOT NULL DEFAULT 0,
+                        createdAtMillis INTEGER NOT NULL,
+                        updatedAtMillis INTEGER NOT NULL,
+                        syncedToCloud INTEGER NOT NULL DEFAULT 0
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_ai_chat_sessions_updatedAtMillis ON ai_chat_sessions(updatedAtMillis)")
+
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS ai_chat_messages (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        sessionId TEXT NOT NULL,
+                        isUser INTEGER NOT NULL,
+                        text TEXT NOT NULL,
+                        isError INTEGER NOT NULL DEFAULT 0,
+                        isUndone INTEGER NOT NULL DEFAULT 0,
+                        engineSource TEXT NOT NULL DEFAULT 'CLOUD_GEMINI',
+                        executedActionsJson TEXT NOT NULL DEFAULT '[]',
+                        timestampMillis INTEGER NOT NULL,
+                        FOREIGN KEY(sessionId) REFERENCES ai_chat_sessions(id) ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_ai_chat_messages_sessionId ON ai_chat_messages(sessionId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_ai_chat_messages_timestampMillis ON ai_chat_messages(timestampMillis)")
+            }
+        }
+
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS savings_certificates (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        title TEXT NOT NULL,
+                        assetKind TEXT NOT NULL DEFAULT 'BANK_CERTIFICATE',
+                        institutionName TEXT NOT NULL DEFAULT '',
+                        principalPiasters INTEGER NOT NULL DEFAULT 0,
+                        annualYieldPercent REAL NOT NULL DEFAULT 0.0,
+                        payoutCycle TEXT NOT NULL DEFAULT 'MONTHLY',
+                        linkedAccountId INTEGER,
+                        nextPayoutMillis INTEGER NOT NULL,
+                        maturityMillis INTEGER,
+                        autoCreditInterest INTEGER NOT NULL DEFAULT 1,
+                        grams REAL NOT NULL DEFAULT 0.0,
+                        karat INTEGER NOT NULL DEFAULT 21,
+                        pricePerGramPiasters INTEGER NOT NULL DEFAULT 0,
+                        notes TEXT NOT NULL DEFAULT '',
+                        isActive INTEGER NOT NULL DEFAULT 1,
+                        createdAt INTEGER NOT NULL,
+                        FOREIGN KEY(linkedAccountId) REFERENCES accounts(id) ON DELETE SET NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_savings_certificates_linkedAccountId ON savings_certificates(linkedAccountId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_savings_certificates_nextPayoutMillis ON savings_certificates(nextPayoutMillis)")
+            }
+        }
+
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: buildDatabase(context.applicationContext).also { INSTANCE = it }
@@ -279,7 +398,7 @@ abstract class AppDatabase : RoomDatabase() {
                 AppDatabase::class.java,
                 "elbagorry_money.db"
             )
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                 .addCallback(object : Callback() {
                     override fun onCreate(db: SupportSQLiteDatabase) {
                         super.onCreate(db)
@@ -328,8 +447,20 @@ abstract class AppDatabase : RoomDatabase() {
             }
 
             val categoryDao = database.categoryDao()
-            if (categoryDao.getAllOnce().isEmpty()) {
+            val existingCategories = categoryDao.getAllOnce()
+            if (existingCategories.isEmpty()) {
                 categoryDao.insertAll(defaultCategories())
+            } else if (existingCategories.none { it.nameEn.equals("Entertainment", ignoreCase = true) }) {
+                categoryDao.insert(
+                    CategoryEntity(
+                        nameAr = "ترفيه",
+                        nameEn = "Entertainment",
+                        type = TransactionType.EXPENSE,
+                        iconName = "movie",
+                        colorHex = "#A855F7",
+                        isDefault = true
+                    )
+                )
             }
 
             val sourceDao = database.financialSourceDao()
@@ -339,7 +470,85 @@ abstract class AppDatabase : RoomDatabase() {
                 val walletAccId = allAccounts.firstOrNull { it.type == AccountType.E_WALLET }?.id
                 sourceDao.insertAll(defaultFinancialSources(bankAccId, walletAccId))
             }
+
+            val bnplDao = database.bnplProgramDao()
+            if (bnplDao.getAllOnce().isEmpty()) {
+                bnplDao.insertAllIgnore(defaultBnplPrograms())
+            }
         }
+
+        fun defaultBnplPrograms(): List<BnplProgramEntity> = listOf(
+            BnplProgramEntity(
+                providerCode = "VALU",
+                nameAr = "فاليو (valU)",
+                nameEn = "valU",
+                creditLimitPiasters = 0L,
+                manualUsedPiasters = 0L,
+                defaultAnnualInterestPercent = 24.0,
+                colorHex = "#6366F1",
+                isEnabled = true
+            ),
+            BnplProgramEntity(
+                providerCode = "KLIVR",
+                nameAr = "كليفر (Klivr)",
+                nameEn = "Klivr",
+                creditLimitPiasters = 0L,
+                manualUsedPiasters = 0L,
+                defaultAnnualInterestPercent = 22.0,
+                colorHex = "#06B6D4",
+                isEnabled = true
+            ),
+            BnplProgramEntity(
+                providerCode = "AMAN",
+                nameAr = "أمان (Aman)",
+                nameEn = "Aman",
+                creditLimitPiasters = 0L,
+                manualUsedPiasters = 0L,
+                defaultAnnualInterestPercent = 25.0,
+                colorHex = "#10B981",
+                isEnabled = true
+            ),
+            BnplProgramEntity(
+                providerCode = "SOUHOOLA",
+                nameAr = "سهولة (Souhoola)",
+                nameEn = "Souhoola",
+                creditLimitPiasters = 0L,
+                manualUsedPiasters = 0L,
+                defaultAnnualInterestPercent = 24.0,
+                colorHex = "#F59E0B",
+                isEnabled = true
+            ),
+            BnplProgramEntity(
+                providerCode = "FORSA",
+                nameAr = "فرصة (Forsa)",
+                nameEn = "Forsa",
+                creditLimitPiasters = 0L,
+                manualUsedPiasters = 0L,
+                defaultAnnualInterestPercent = 23.0,
+                colorHex = "#EC4899",
+                isEnabled = true
+            ),
+            BnplProgramEntity(
+                providerCode = "HALAN",
+                nameAr = "حالاً (Halan)",
+                nameEn = "Halan",
+                creditLimitPiasters = 0L,
+                manualUsedPiasters = 0L,
+                defaultAnnualInterestPercent = 26.0,
+                colorHex = "#8B5CF6",
+                isEnabled = true
+            ),
+            BnplProgramEntity(
+                providerCode = "BANK_CARD",
+                nameAr = "تقسيط البطاقة البنكية",
+                nameEn = "Bank Card Installments",
+                creditLimitPiasters = 0L,
+                manualUsedPiasters = 0L,
+                defaultAnnualInterestPercent = 18.0,
+                colorHex = "#3B82F6",
+                isEnabled = true
+            )
+        )
 
         fun defaultCategories(): List<CategoryEntity> = listOf(
             CategoryEntity(nameAr = "طعام ومشروبات", nameEn = "Food & Drinks", type = TransactionType.EXPENSE, iconName = "restaurant", colorHex = "#F59E0B", isDefault = true),
@@ -347,6 +556,7 @@ abstract class AppDatabase : RoomDatabase() {
             CategoryEntity(nameAr = "فواتير وخدمات", nameEn = "Bills & Utilities", type = TransactionType.EXPENSE, iconName = "receipt_long", colorHex = "#EF4444", isDefault = true),
             CategoryEntity(nameAr = "سكن وإيجار", nameEn = "Housing & Rent", type = TransactionType.EXPENSE, iconName = "home", colorHex = "#A855F7", isDefault = true),
             CategoryEntity(nameAr = "تسوق", nameEn = "Shopping", type = TransactionType.EXPENSE, iconName = "shopping_bag", colorHex = "#EC4899", isDefault = true),
+            CategoryEntity(nameAr = "ترفيه", nameEn = "Entertainment", type = TransactionType.EXPENSE, iconName = "movie", colorHex = "#A855F7", isDefault = true),
             CategoryEntity(nameAr = "صحة وعلاج", nameEn = "Healthcare", type = TransactionType.EXPENSE, iconName = "medical_services", colorHex = "#14B8A6", isDefault = true),
             CategoryEntity(nameAr = "تعليم", nameEn = "Education", type = TransactionType.EXPENSE, iconName = "school", colorHex = "#6366F1", isDefault = true),
             CategoryEntity(nameAr = "اشتراكات", nameEn = "Subscriptions", type = TransactionType.EXPENSE, iconName = "subscriptions", colorHex = "#F97316", isDefault = true),

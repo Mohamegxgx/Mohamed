@@ -14,13 +14,18 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.ArrowDownward
+import androidx.compose.material.icons.rounded.ArrowUpward
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Block
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.SwapHoriz
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -30,6 +35,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -51,9 +58,10 @@ import com.example.ui.components.FinancialCard
 import com.example.ui.components.MoneyText
 import com.example.ui.components.formatReadableDateTime
 import com.example.ui.theme.CoralExpense
-import com.example.ui.theme.EmeraldPrimary
 import com.example.ui.theme.GoldAccent
 import com.example.ui.theme.SkyCyan
+import com.example.ui.theme.semanticPositiveColor
+import com.example.ui.viewmodel.SmartReaderAiState
 
 @Composable
 fun PendingTransactionCard(
@@ -62,7 +70,7 @@ fun PendingTransactionCard(
     categories: List<CategoryEntity>,
     lang: AppLanguage,
     hideAmounts: Boolean,
-    onQuickApprove: (PendingTransactionEntity, Long, Long?) -> Unit,
+    onQuickApprove: (PendingTransactionEntity, Long, Long?, Long?) -> Unit,
     onOpenEdit: (PendingTransactionEntity) -> Unit,
     onReject: (Long) -> Unit,
     onIgnoreSource: (Long) -> Unit
@@ -70,11 +78,15 @@ fun PendingTransactionCard(
     val activeAccounts = remember(accounts) { accounts.filter { !it.isArchived } }
     val resolvedAccountId = item.suggestedAccountId ?: activeAccounts.firstOrNull()?.id ?: 1L
     val accountName = accounts.firstOrNull { it.id == resolvedAccountId }?.name ?: "-"
+    val resolvedTargetAccountId = if (item.mappedType == TransactionType.TRANSFER) {
+        item.targetAccountId?.takeIf { it != resolvedAccountId }
+    } else null
+    val targetAccountName = resolvedTargetAccountId?.let { tid -> accounts.firstOrNull { it.id == tid }?.name }
     val categoryName = item.suggestedCategoryId?.let { cid ->
         categories.firstOrNull { it.id == cid }?.let { if (lang == AppLanguage.AR) it.nameAr else it.nameEn }
     }
     val typeColor = when (item.mappedType) {
-        TransactionType.INCOME -> EmeraldPrimary
+        TransactionType.INCOME -> semanticPositiveColor()
         TransactionType.EXPENSE -> CoralExpense
         TransactionType.TRANSFER -> SkyCyan
         else -> GoldAccent
@@ -131,11 +143,35 @@ fun PendingTransactionCard(
                 style = MaterialTheme.typography.titleLarge,
                 showSign = false
             )
-            Text(
-                text = AppStrings.transactionTypeLabel(item.mappedType, lang),
-                style = MaterialTheme.typography.labelLarge,
-                color = typeColor
-            )
+            val (dirIcon, dirLabel) = when (item.mappedType) {
+                TransactionType.INCOME -> Icons.Rounded.ArrowDownward to AppStrings.text("استقبال (وارد)", "Incoming", lang)
+                TransactionType.TRANSFER -> Icons.Rounded.SwapHoriz to AppStrings.text("تحويل داخلي", "Internal Transfer", lang)
+                else -> Icons.Rounded.ArrowUpward to AppStrings.text("إرسال (صادر)", "Outgoing", lang)
+            }
+            Surface(
+                color = typeColor.copy(alpha = 0.14f),
+                shape = MaterialTheme.shapes.small,
+                modifier = Modifier.testTag("pending_direction_badge_${item.id}")
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Icon(
+                        imageVector = dirIcon,
+                        contentDescription = null,
+                        tint = typeColor,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Text(
+                        text = dirLabel,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = typeColor
+                    )
+                }
+            }
         }
 
         Spacer(Modifier.height(6.dp))
@@ -145,8 +181,17 @@ fun PendingTransactionCard(
         )
 
         val metaParts = buildList {
-            add("${AppStrings.text("الحساب المقترح", "Account", lang)}: $accountName")
+            if (item.mappedType == TransactionType.TRANSFER) {
+                val targetStr = targetAccountName ?: AppStrings.text("اختر عند القبول", "Pick target", lang)
+                add("${AppStrings.text("التحويل", "Transfer", lang)}: $accountName ➔ $targetStr")
+            } else {
+                add("${AppStrings.text("الحساب المقترح", "Account", lang)}: $accountName")
+            }
             if (categoryName != null) add("${AppStrings.text("الفئة", "Category", lang)}: $categoryName")
+            if (item.feePiasters > 0L) {
+                val feeStr = MoneyFormatter.formatPiasters(item.feePiasters, item.currency, lang, hideAmounts)
+                add("${AppStrings.text("الرسوم", "Fee", lang)}: $feeStr")
+            }
             if (!item.counterpartyName.isNullOrBlank()) add("${AppStrings.text("الطرف", "Counterparty", lang)}: ${item.counterpartyName}")
             if (!item.referenceNumber.isNullOrBlank()) add("${AppStrings.text("المرجع", "Ref", lang)}: ${item.referenceNumber}")
             if (item.balanceAfterPiasters != null) {
@@ -168,7 +213,7 @@ fun PendingTransactionCard(
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Button(
-                onClick = { onQuickApprove(item, resolvedAccountId, item.suggestedCategoryId) },
+                onClick = { onQuickApprove(item, resolvedAccountId, resolvedTargetAccountId, item.suggestedCategoryId) },
                 modifier = Modifier.weight(1f).testTag("accept_pending_${item.id}")
             ) {
                 Icon(Icons.Rounded.CheckCircle, contentDescription = null, modifier = Modifier.size(16.dp))
@@ -367,21 +412,36 @@ fun PendingReviewEditDialog(
 @Composable
 fun PasteFinancialMessageDialog(
     lang: AppLanguage,
+    smartReaderAiState: SmartReaderAiState = SmartReaderAiState.Idle,
     onDismiss: () -> Unit,
-    onAnalyze: (sender: String, body: String) -> Unit
+    onAnalyze: (sender: String, body: String) -> Unit,
+    onAnalyzeWithAi: (sender: String, body: String) -> Unit = { _, _ -> },
+    onResetAiState: () -> Unit = {}
 ) {
     var sender by remember { mutableStateOf("") }
     var messageBody by remember { mutableStateOf("") }
+    val isAiLoading = smartReaderAiState is SmartReaderAiState.Loading
+
+    DisposableEffect(Unit) {
+        onDispose { onResetAiState() }
+    }
+
+    LaunchedEffect(smartReaderAiState) {
+        if (smartReaderAiState is SmartReaderAiState.Done) {
+            onResetAiState()
+            onDismiss()
+        }
+    }
 
     AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(AppStrings.text("تحليل رسالة مالية محليًا", "Analyze Financial Message", lang)) },
+        onDismissRequest = { if (!isAiLoading) onDismiss() },
+        title = { Text(AppStrings.text("تحليل الرسائل المالية", "Analyze Financial Message", lang)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
                     text = AppStrings.text(
-                        "الصق نص رسالة بنك أو محفظة (أو عدة رسائل مفصولة بسطر فارغ). يتم التحليل محليًا 100% دون إنترنت.",
-                        "Paste bank or wallet message(s). 100% local offline parsing.",
+                        "الصق رسالة بنك أو إنستاباي أو محفظة (أو عدة رسائل). اختر التحليل بـ Gemini للرسائل غير النمطية والتحويلات والرسوم، أو التحليل المحلي السريع. أكواد OTP تُستبعد دائمًا.",
+                        "Paste bank, wallet, or InstaPay message(s). Use Gemini AI for unstructured alerts, transfers & fees, or Local Offline parsing. OTP codes are always excluded.",
                         lang
                     ),
                     style = MaterialTheme.typography.bodySmall,
@@ -390,6 +450,7 @@ fun PasteFinancialMessageDialog(
                 OutlinedTextField(
                     value = sender,
                     onValueChange = { sender = it },
+                    enabled = !isAiLoading,
                     label = { Text(AppStrings.text("المرسل (اختياري، مثل VodafoneCash / CIB)", "Sender (optional)", lang)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth().testTag("paste_sender_input")
@@ -397,28 +458,79 @@ fun PasteFinancialMessageDialog(
                 OutlinedTextField(
                     value = messageBody,
                     onValueChange = { messageBody = it },
+                    enabled = !isAiLoading,
                     label = { Text(AppStrings.text("نص الرسالة المالية", "Message text", lang)) },
                     minLines = 3,
                     maxLines = 6,
                     modifier = Modifier.fillMaxWidth().testTag("paste_body_input")
                 )
+
+                if (isAiLoading) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        modifier = Modifier.padding(top = 4.dp)
+                    ) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                        Text(
+                            text = AppStrings.text("جاري تحليل الرسائل عبر Gemini AI...", "Analyzing via Gemini AI...", lang),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+
+                if (smartReaderAiState is SmartReaderAiState.Error) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.errorContainer,
+                        shape = MaterialTheme.shapes.small,
+                        modifier = Modifier.fillMaxWidth().testTag("paste_ai_error")
+                    ) {
+                        Text(
+                            text = smartReaderAiState.message,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                        )
+                    }
+                }
             }
         },
         confirmButton = {
-            Button(
-                onClick = {
-                    if (messageBody.isNotBlank()) {
-                        onAnalyze(sender.ifBlank { "ManualPaste" }, messageBody)
-                        onDismiss()
-                    }
-                },
-                modifier = Modifier.testTag("analyze_pasted_btn")
-            ) {
-                Text(AppStrings.text("تحليل واستخراج", "Analyze", lang))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = {
+                        if (messageBody.isNotBlank()) {
+                            onAnalyze(sender.ifBlank { "ManualPaste" }, messageBody)
+                            onDismiss()
+                        }
+                    },
+                    enabled = !isAiLoading && messageBody.isNotBlank(),
+                    modifier = Modifier.testTag("analyze_pasted_btn")
+                ) {
+                    Text(AppStrings.text("محلي", "Local", lang))
+                }
+                Button(
+                    onClick = {
+                        if (messageBody.isNotBlank()) {
+                            onAnalyzeWithAi(sender.ifBlank { "ManualPaste" }, messageBody)
+                        }
+                    },
+                    enabled = !isAiLoading && messageBody.isNotBlank(),
+                    modifier = Modifier.testTag("analyze_pasted_ai_btn")
+                ) {
+                    Icon(Icons.Rounded.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Text(AppStrings.text("تحليل بـ Gemini", "Gemini AI", lang), modifier = Modifier.padding(start = 4.dp))
+                }
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text(AppStrings.text("إلغاء", "Cancel", lang)) }
+            TextButton(
+                onClick = onDismiss,
+                enabled = !isAiLoading
+            ) {
+                Text(AppStrings.text("إلغاء", "Cancel", lang))
+            }
         }
     )
 }

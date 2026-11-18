@@ -176,7 +176,11 @@ data class SavingsGoalEntity(
             onDelete = ForeignKey.SET_NULL
         )
     ],
-    indices = [Index(value = ["accountId"]), Index(value = ["nextDueDateMillis"])]
+    indices = [
+        Index(value = ["accountId"]),
+        Index(value = ["nextDueDateMillis"]),
+        Index(value = ["bnplProgramId"])
+    ]
 )
 data class InstallmentEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -190,6 +194,8 @@ data class InstallmentEntity(
     val nextDueDateMillis: Long,
     val frequency: InstallmentFrequency = InstallmentFrequency.MONTHLY,
     val status: InstallmentStatus = InstallmentStatus.ACTIVE,
+    val bnplProgramId: Long? = null,
+    val principalAmountPiasters: Long = 0L,
     val createdAt: Long = System.currentTimeMillis()
 )
 
@@ -398,3 +404,103 @@ data class MerchantRuleEntity(
     val hitCount: Int = 1,
     val createdAt: Long = System.currentTimeMillis()
 )
+
+@Serializable
+@Entity(
+    tableName = "bnpl_programs",
+    indices = [Index(value = ["providerCode"], unique = true)]
+)
+data class BnplProgramEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val providerCode: String,
+    val nameAr: String,
+    val nameEn: String,
+    val creditLimitPiasters: Long = 0L,
+    val manualUsedPiasters: Long = 0L,
+    val defaultAnnualInterestPercent: Double = 0.0,
+    val colorHex: String = "#38BDF8",
+    val isEnabled: Boolean = true,
+    val notes: String = "",
+    val createdAt: Long = System.currentTimeMillis()
+)
+
+@Serializable
+@Entity(
+    tableName = "ai_chat_sessions",
+    indices = [Index(value = ["updatedAtMillis"])]
+)
+data class AiChatSessionEntity(
+    @PrimaryKey val id: String,
+    val title: String,
+    val lastMessagePreview: String = "",
+    val messageCount: Int = 0,
+    val createdAtMillis: Long = System.currentTimeMillis(),
+    val updatedAtMillis: Long = System.currentTimeMillis(),
+    val syncedToCloud: Boolean = false
+)
+
+@Serializable
+@Entity(
+    tableName = "ai_chat_messages",
+    foreignKeys = [
+        ForeignKey(
+            entity = AiChatSessionEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["sessionId"],
+            onDelete = ForeignKey.CASCADE
+        )
+    ],
+    indices = [
+        Index(value = ["sessionId"]),
+        Index(value = ["timestampMillis"])
+    ]
+)
+data class AiChatMessageEntity(
+    @PrimaryKey val id: String,
+    val sessionId: String,
+    val isUser: Boolean,
+    val text: String,
+    val isError: Boolean = false,
+    val isUndone: Boolean = false,
+    val engineSource: String = "CLOUD_GEMINI",
+    val executedActionsJson: String = "[]",
+    val timestampMillis: Long = System.currentTimeMillis()
+)
+
+@Serializable
+@Entity(
+    tableName = "savings_certificates",
+    foreignKeys = [
+        ForeignKey(
+            entity = AccountEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["linkedAccountId"],
+            onDelete = ForeignKey.SET_NULL
+        )
+    ],
+    indices = [
+        Index(value = ["linkedAccountId"]),
+        Index(value = ["nextPayoutMillis"])
+    ]
+)
+data class SavingsCertificateEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val title: String,
+    val assetKind: com.example.domain.model.SavingsAssetKind = com.example.domain.model.SavingsAssetKind.BANK_CERTIFICATE,
+    val institutionName: String = "",
+    val principalPiasters: Long = 0L,
+    val annualYieldPercent: Double = 0.0,
+    val payoutCycle: com.example.domain.model.PayoutCycle = com.example.domain.model.PayoutCycle.MONTHLY,
+    val linkedAccountId: Long? = null,
+    val nextPayoutMillis: Long = System.currentTimeMillis() + 30L * 24L * 60L * 60L * 1000L,
+    val maturityMillis: Long? = null,
+    val autoCreditInterest: Boolean = true,
+    val grams: Double = 0.0,
+    val karat: Int = 21,
+    val pricePerGramPiasters: Long = 0L,
+    val notes: String = "",
+    val isActive: Boolean = true,
+    val createdAt: Long = System.currentTimeMillis()
+)
+
+

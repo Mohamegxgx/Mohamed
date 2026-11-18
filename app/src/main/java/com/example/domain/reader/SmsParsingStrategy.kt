@@ -2,6 +2,7 @@ package com.example.domain.reader
 
 import com.example.domain.engine.MoneyFormatter
 import com.example.domain.model.MessageOperationKind
+import com.example.domain.model.TransactionType
 import java.text.SimpleDateFormat
 import java.util.Locale
 
@@ -17,7 +18,8 @@ data class StrategyExtractedFields(
     val referenceNumber: String?,
     val counterpartyName: String?,
     val transactionTimestampMillis: Long,
-    val confidenceBoost: Float = 0.25f
+    val confidenceBoost: Float = 0.25f,
+    val directionAssessment: DirectionAssessment? = null
 )
 
 /**
@@ -83,25 +85,23 @@ object RegexSmsExtractor {
         "dd/MM/yy"
     )
 
-    private val operationRegexRules: List<Pair<MessageOperationKind, Regex>> = listOf(
-        MessageOperationKind.SALARY to Regex("""\b(salary|payroll)\b|(راتب|مرتب)""", RegexOption.IGNORE_CASE),
-        MessageOperationKind.INTERNAL_TRANSFER to Regex("""(بين حساباتك|حسابك الآخر|تحويل داخلي|own account|between your accounts|internal transfer)""", RegexOption.IGNORE_CASE),
-        MessageOperationKind.REFUND to Regex("""(استرداد|مرتجع|رد مبلغ|\brefund\b|\breversed\b|\breversal\b)""", RegexOption.IGNORE_CASE),
-        MessageOperationKind.INCOMING_TRANSFER to Regex("""(تم استلام|استلمت|تحويل وارد|وصلك|وصلتك|أرسل لك|\breceived\b|credited with|incoming transfer|transferred to your)""", RegexOption.IGNORE_CASE),
-        MessageOperationKind.DEPOSIT to Regex("""(تم إيداع|تم ايداع|إيداع|ايداع|\bdeposited\b|cash deposit|cash in)""", RegexOption.IGNORE_CASE),
-        MessageOperationKind.WITHDRAWAL to Regex("""(تم سحب|سحب نقدي|سحب مبلغ|صراف آلي|\batm\b|\bwithdrawn\b|\bwithdrawal\b|cash out)""", RegexOption.IGNORE_CASE),
-        MessageOperationKind.BILL_PAYMENT to Regex("""(دفع فاتورة|سداد فاتورة|فاتورة|شحن رصيد|bill payment|utility payment|paid bill)""", RegexOption.IGNORE_CASE),
-        MessageOperationKind.TRANSFER_FEE to Regex("""(رسوم تحويل|خصم رسوم|مصاريف إدارية|transfer fee|service fee|fee charged)""", RegexOption.IGNORE_CASE),
-        MessageOperationKind.CARD_PURCHASE to Regex("""(عملية شراء|شراء بمبلغ|تم الشراء|نقطة بيع|بطاقة|purchase of|\bspent\b|\bpos\b|card ending|was charged|تم خصم.*بطاق)""", RegexOption.IGNORE_CASE),
-        MessageOperationKind.OUTGOING_TRANSFER to Regex("""(تم تحويل|قمت بتحويل|تحويل صادر|حولت|\btransferred\b|\bsent\b|debited with|debited from|تم خصم)""", RegexOption.IGNORE_CASE),
-        MessageOperationKind.BALANCE_INQUIRY to Regex("""(استعلام عن الرصيد|الرصيد الحالي|رصيدك المتاح|رصيدك هو|balance inquiry|available balance|current balance)""", RegexOption.IGNORE_CASE)
+    fun classifyDirectionAndKind(
+        normalizedBody: String,
+        balanceAfterPiasters: Long? = null,
+        knownAccountBalancePiasters: Long? = null,
+        hasTransactionAmount: Boolean = false,
+        learnedPreferredType: TransactionType? = null
+    ): DirectionAssessment = MessageDirectionClassifier.classify(
+        rawBody = normalizedBody,
+        balanceAfterPiasters = balanceAfterPiasters,
+        knownAccountBalancePiasters = knownAccountBalancePiasters,
+        hasTransactionAmount = hasTransactionAmount,
+        learnedPreferredType = learnedPreferredType
     )
 
     fun extractOperationKind(normalizedBody: String): MessageOperationKind? {
-        for ((kind, regex) in operationRegexRules) {
-            if (regex.containsMatchIn(normalizedBody)) return kind
-        }
-        return null
+        val assessment = MessageDirectionClassifier.classify(normalizedBody)
+        return if (assessment.direction == MessageDirection.UNKNOWN) null else assessment.operationKind
     }
 
     fun detectCurrency(normalizedBody: String): String {

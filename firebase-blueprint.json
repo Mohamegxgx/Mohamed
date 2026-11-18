@@ -1,0 +1,527 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "Authenticated user's cloud profile and sync preferences for ELBAGORRY Money.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Firebase Auth UID matching the document ID."
+        },
+        "displayName": {
+          "type": "string",
+          "description": "User display name."
+        },
+        "email": {
+          "type": "string",
+          "description": "Optional user email address."
+        },
+        "currencyCode": {
+          "type": "string",
+          "description": "Primary display currency ISO code.",
+          "enum": ["EGP", "USD", "SAR", "EUR", "AED", "GBP", "KWD"]
+        },
+        "themePreset": {
+          "type": "string",
+          "description": "Selected app theme preset identifier."
+        },
+        "lastSyncedAtMillis": {
+          "type": "integer",
+          "description": "Client epoch timestamp of the latest sync."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when created (FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when last updated (FieldValue.serverTimestamp())."
+        }
+      },
+      "required": ["userId", "displayName", "currencyCode", "createdAt", "updatedAt"]
+    },
+    "CloudAccount": {
+      "title": "Cloud Account",
+      "description": "User financial account synchronized to Firestore.",
+      "type": "object",
+      "properties": {
+        "localId": { "type": "integer", "description": "Local Room primary key ID." },
+        "name": { "type": "string", "description": "Account display name." },
+        "accountType": { "type": "string", "description": "AccountType enum name." },
+        "openingBalancePiasters": { "type": "integer", "description": "Opening balance in minor units." },
+        "currentBalancePiasters": { "type": "integer", "description": "Current balance in minor units." },
+        "currency": { "type": "string", "description": "Account ISO currency code." },
+        "colorHex": { "type": "string", "description": "Hex color tag." },
+        "iconName": { "type": "string", "description": "Icon identifier." },
+        "isArchived": { "type": "boolean", "description": "Whether account is archived." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp (FieldValue.serverTimestamp())." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp (FieldValue.serverTimestamp())." }
+      },
+      "required": [
+        "localId",
+        "name",
+        "accountType",
+        "openingBalancePiasters",
+        "currentBalancePiasters",
+        "currency",
+        "colorHex",
+        "iconName",
+        "isArchived",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "CloudCategory": {
+      "title": "Cloud Category",
+      "description": "User income/expense category synchronized to Firestore.",
+      "type": "object",
+      "properties": {
+        "localId": { "type": "integer" },
+        "nameAr": { "type": "string" },
+        "nameEn": { "type": "string" },
+        "transactionType": { "type": "string" },
+        "iconName": { "type": "string" },
+        "colorHex": { "type": "string" },
+        "isDefault": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "localId",
+        "nameAr",
+        "nameEn",
+        "transactionType",
+        "iconName",
+        "colorHex",
+        "isDefault",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "CloudTransaction": {
+      "title": "Cloud Transaction",
+      "description": "User financial transaction synchronized to Firestore.",
+      "type": "object",
+      "properties": {
+        "localId": { "type": "integer" },
+        "amountPiasters": { "type": "integer" },
+        "transactionType": { "type": "string" },
+        "accountLocalId": { "type": "integer" },
+        "targetAccountLocalId": { "type": "integer" },
+        "categoryLocalId": { "type": "integer" },
+        "description": { "type": "string" },
+        "notes": { "type": "string" },
+        "source": { "type": "string" },
+        "referenceNumber": { "type": "string" },
+        "timestampMillis": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "localId",
+        "amountPiasters",
+        "transactionType",
+        "accountLocalId",
+        "description",
+        "notes",
+        "source",
+        "timestampMillis",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "CloudBudget": {
+      "title": "Cloud Budget",
+      "description": "Monthly or category budget limit synchronized to Firestore.",
+      "type": "object",
+      "properties": {
+        "localId": { "type": "integer" },
+        "name": { "type": "string" },
+        "categoryLocalId": { "type": "integer" },
+        "limitPiasters": { "type": "integer" },
+        "yearMonth": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["localId", "name", "limitPiasters", "yearMonth", "createdAt", "updatedAt"]
+    },
+    "CloudSavingsGoal": {
+      "title": "Cloud Savings Goal",
+      "description": "User savings goal synchronized to Firestore.",
+      "type": "object",
+      "properties": {
+        "localId": { "type": "integer" },
+        "name": { "type": "string" },
+        "presetType": { "type": "string" },
+        "targetAmountPiasters": { "type": "integer" },
+        "savedAmountPiasters": { "type": "integer" },
+        "status": { "type": "string" },
+        "colorHex": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "localId",
+        "name",
+        "presetType",
+        "targetAmountPiasters",
+        "savedAmountPiasters",
+        "status",
+        "colorHex",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "CloudMerchantRule": {
+      "title": "Cloud Merchant Rule",
+      "description": "Auto-categorization merchant keyword rule synchronized to Firestore.",
+      "type": "object",
+      "properties": {
+        "localId": { "type": "integer" },
+        "keyword": { "type": "string" },
+        "normalizedKeyword": { "type": "string" },
+        "categoryLocalId": { "type": "integer" },
+        "accountLocalId": { "type": "integer" },
+        "preferredType": { "type": "string" },
+        "hitCount": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "localId",
+        "keyword",
+        "normalizedKeyword",
+        "preferredType",
+        "hitCount",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "CloudAiChatSession": {
+      "title": "Cloud AI Chat Session",
+      "description": "Metadata for an AI financial assistant conversation thread.",
+      "type": "object",
+      "properties": {
+        "sessionId": { "type": "string" },
+        "title": { "type": "string" },
+        "lastMessagePreview": { "type": "string" },
+        "messageCount": { "type": "integer" },
+        "createdAtMillis": { "type": "integer" },
+        "updatedAtMillis": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "sessionId",
+        "title",
+        "lastMessagePreview",
+        "messageCount",
+        "createdAtMillis",
+        "updatedAtMillis",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "CloudAiChatMessage": {
+      "title": "Cloud AI Chat Message",
+      "description": "Individual AI chat message inside an AI chat session subcollection.",
+      "type": "object",
+      "properties": {
+        "messageId": { "type": "string" },
+        "sessionId": { "type": "string" },
+        "isUser": { "type": "boolean" },
+        "text": { "type": "string" },
+        "isError": { "type": "boolean" },
+        "isUndone": { "type": "boolean" },
+        "engineSource": { "type": "string", "enum": ["CLOUD_GEMINI", "LOCAL_OFFLINE"] },
+        "executedActionsJson": { "type": "string" },
+        "timestampMillis": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "messageId",
+        "sessionId",
+        "isUser",
+        "text",
+        "isError",
+        "isUndone",
+        "engineSource",
+        "executedActionsJson",
+        "timestampMillis",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "CloudInstallment": {
+      "title": "Cloud Installment",
+      "description": "User installment commitment synchronized to Firestore.",
+      "type": "object",
+      "properties": {
+        "localId": { "type": "integer" },
+        "name": { "type": "string" },
+        "creditor": { "type": "string" },
+        "accountLocalId": { "type": "integer" },
+        "totalAmountPiasters": { "type": "integer" },
+        "installmentAmountPiasters": { "type": "integer" },
+        "totalCount": { "type": "integer" },
+        "paidCount": { "type": "integer" },
+        "nextDueDateMillis": { "type": "integer" },
+        "frequency": { "type": "string" },
+        "status": { "type": "string" },
+        "bnplProgramId": { "type": "integer" },
+        "principalAmountPiasters": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "localId",
+        "name",
+        "creditor",
+        "totalAmountPiasters",
+        "installmentAmountPiasters",
+        "totalCount",
+        "paidCount",
+        "nextDueDateMillis",
+        "frequency",
+        "status",
+        "principalAmountPiasters",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "CloudRecurringRule": {
+      "title": "Cloud Recurring Rule",
+      "description": "Scheduled recurring income/expense rule synchronized to Firestore.",
+      "type": "object",
+      "properties": {
+        "localId": { "type": "integer" },
+        "title": { "type": "string" },
+        "transactionType": { "type": "string" },
+        "incomeSourceType": { "type": "string" },
+        "amountPiasters": { "type": "integer" },
+        "accountLocalId": { "type": "integer" },
+        "categoryLocalId": { "type": "integer" },
+        "frequency": { "type": "string" },
+        "nextRunDateMillis": { "type": "integer" },
+        "notifyDaysBefore": { "type": "integer" },
+        "isActive": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "localId",
+        "title",
+        "transactionType",
+        "incomeSourceType",
+        "amountPiasters",
+        "accountLocalId",
+        "frequency",
+        "nextRunDateMillis",
+        "notifyDaysBefore",
+        "isActive",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "CloudDebt": {
+      "title": "Cloud Debt",
+      "description": "Personal debt or receivable record synchronized to Firestore.",
+      "type": "object",
+      "properties": {
+        "localId": { "type": "integer" },
+        "personName": { "type": "string" },
+        "direction": { "type": "string" },
+        "totalAmountPiasters": { "type": "integer" },
+        "paidAmountPiasters": { "type": "integer" },
+        "dueDateMillis": { "type": "integer" },
+        "status": { "type": "string" },
+        "notes": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "localId",
+        "personName",
+        "direction",
+        "totalAmountPiasters",
+        "paidAmountPiasters",
+        "status",
+        "notes",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "CloudBnplProgram": {
+      "title": "Cloud BNPL Program",
+      "description": "BNPL / Credit program configuration synchronized to Firestore.",
+      "type": "object",
+      "properties": {
+        "localId": { "type": "integer" },
+        "providerCode": { "type": "string" },
+        "nameAr": { "type": "string" },
+        "nameEn": { "type": "string" },
+        "creditLimitPiasters": { "type": "integer" },
+        "manualUsedPiasters": { "type": "integer" },
+        "defaultAnnualInterestPercent": { "type": "number" },
+        "colorHex": { "type": "string" },
+        "isEnabled": { "type": "boolean" },
+        "notes": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "localId",
+        "providerCode",
+        "nameAr",
+        "nameEn",
+        "creditLimitPiasters",
+        "manualUsedPiasters",
+        "defaultAnnualInterestPercent",
+        "colorHex",
+        "isEnabled",
+        "notes",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "CloudFinancialSource": {
+      "title": "Cloud Financial Source",
+      "description": "Smart Reader trusted bank/wallet sender rule synchronized to Firestore.",
+      "type": "object",
+      "properties": {
+        "localId": { "type": "integer" },
+        "code": { "type": "string" },
+        "displayNameAr": { "type": "string" },
+        "displayNameEn": { "type": "string" },
+        "senderKeywords": { "type": "string" },
+        "packageNames": { "type": "string" },
+        "defaultAccountLocalId": { "type": "integer" },
+        "isEnabled": { "type": "boolean" },
+        "isIgnored": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "localId",
+        "code",
+        "displayNameAr",
+        "displayNameEn",
+        "senderKeywords",
+        "packageNames",
+        "isEnabled",
+        "isIgnored",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "CloudSavingsCertificate": {
+      "title": "Cloud Savings Certificate or Gold Reserve",
+      "description": "Bank certificate / term deposit or gold holding synchronized to Firestore.",
+      "type": "object",
+      "properties": {
+        "localId": { "type": "integer" },
+        "title": { "type": "string" },
+        "assetKind": { "type": "string", "enum": ["BANK_CERTIFICATE", "GOLD_RESERVE"] },
+        "institutionName": { "type": "string" },
+        "principalPiasters": { "type": "integer" },
+        "annualYieldPercent": { "type": "number" },
+        "payoutCycle": { "type": "string" },
+        "linkedAccountLocalId": { "type": "integer" },
+        "nextPayoutMillis": { "type": "integer" },
+        "maturityMillis": { "type": "integer" },
+        "autoCreditInterest": { "type": "boolean" },
+        "grams": { "type": "number" },
+        "karat": { "type": "integer" },
+        "pricePerGramPiasters": { "type": "integer" },
+        "notes": { "type": "string" },
+        "isActive": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "localId",
+        "title",
+        "assetKind",
+        "institutionName",
+        "principalPiasters",
+        "annualYieldPercent",
+        "payoutCycle",
+        "nextPayoutMillis",
+        "autoCreditInterest",
+        "grams",
+        "karat",
+        "pricePerGramPiasters",
+        "notes",
+        "isActive",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Private user cloud profile and sync metadata."
+    },
+    "/users/{userId}/accounts/{accountId}": {
+      "schema": { "$ref": "#/entities/CloudAccount" },
+      "description": "User financial accounts subcollection."
+    },
+    "/users/{userId}/categories/{categoryId}": {
+      "schema": { "$ref": "#/entities/CloudCategory" },
+      "description": "User categories subcollection."
+    },
+    "/users/{userId}/transactions/{transactionId}": {
+      "schema": { "$ref": "#/entities/CloudTransaction" },
+      "description": "User financial transactions subcollection."
+    },
+    "/users/{userId}/budgets/{budgetId}": {
+      "schema": { "$ref": "#/entities/CloudBudget" },
+      "description": "User budgets subcollection."
+    },
+    "/users/{userId}/goals/{goalId}": {
+      "schema": { "$ref": "#/entities/CloudSavingsGoal" },
+      "description": "User savings goals subcollection."
+    },
+    "/users/{userId}/merchant_rules/{ruleId}": {
+      "schema": { "$ref": "#/entities/CloudMerchantRule" },
+      "description": "User merchant auto-categorization rules subcollection."
+    },
+    "/users/{userId}/ai_chats/{chatId}": {
+      "schema": { "$ref": "#/entities/CloudAiChatSession" },
+      "description": "User AI assistant conversation threads subcollection."
+    },
+    "/users/{userId}/ai_chats/{chatId}/messages/{messageId}": {
+      "schema": { "$ref": "#/entities/CloudAiChatMessage" },
+      "description": "Messages belonging to a specific AI chat session."
+    },
+    "/users/{userId}/installments/{installmentId}": {
+      "schema": { "$ref": "#/entities/CloudInstallment" },
+      "description": "User installments subcollection."
+    },
+    "/users/{userId}/recurring_rules/{ruleId}": {
+      "schema": { "$ref": "#/entities/CloudRecurringRule" },
+      "description": "User recurring income/expense rules subcollection."
+    },
+    "/users/{userId}/debts/{debtId}": {
+      "schema": { "$ref": "#/entities/CloudDebt" },
+      "description": "User debts and receivables subcollection."
+    },
+    "/users/{userId}/bnpl_programs/{programId}": {
+      "schema": { "$ref": "#/entities/CloudBnplProgram" },
+      "description": "User BNPL credit programs subcollection."
+    },
+    "/users/{userId}/financial_sources/{sourceId}": {
+      "schema": { "$ref": "#/entities/CloudFinancialSource" },
+      "description": "User Smart Reader financial sources subcollection."
+    },
+    "/users/{userId}/savings_certificates/{certId}": {
+      "schema": { "$ref": "#/entities/CloudSavingsCertificate" },
+      "description": "User bank savings certificates and gold reserves subcollection."
+    }
+  }
+}

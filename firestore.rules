@@ -1,0 +1,586 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 1. Global Safety Net (Default-Deny Catch-All)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // 2. Shared Hardened Primitives
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidTimestamp(ts) {
+      return ts is timestamp && ts <= request.time;
+    }
+
+    // 3. Entity Validation Blueprints
+    function isValidUserProfile(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 100 &&
+             (!('email' in data) || data.email == null || (data.email is string && data.email.size() <= 200)) &&
+             data.currencyCode is string && data.currencyCode in ['EGP', 'USD', 'SAR', 'EUR', 'AED', 'GBP', 'KWD'] &&
+             (!('themePreset' in data) || data.themePreset == null || (data.themePreset is string && data.themePreset.size() <= 50)) &&
+             (!('lastSyncedAtMillis' in data) || data.lastSyncedAtMillis == null || (data.lastSyncedAtMillis is int && data.lastSyncedAtMillis >= 0)) &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidCloudAccount(data) {
+      return data.localId is int && data.localId > 0 &&
+             data.name is string && data.name.size() >= 1 && data.name.size() <= 100 &&
+             data.accountType is string && data.accountType.size() >= 1 && data.accountType.size() <= 40 &&
+             data.openingBalancePiasters is int &&
+             data.currentBalancePiasters is int &&
+             data.currency is string && data.currency.size() >= 3 && data.currency.size() <= 6 &&
+             data.colorHex is string && data.colorHex.size() >= 4 && data.colorHex.size() <= 12 &&
+             data.iconName is string && data.iconName.size() >= 1 && data.iconName.size() <= 40 &&
+             data.isArchived is bool &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidCloudCategory(data) {
+      return data.localId is int && data.localId > 0 &&
+             data.nameAr is string && data.nameAr.size() >= 1 && data.nameAr.size() <= 80 &&
+             data.nameEn is string && data.nameEn.size() >= 1 && data.nameEn.size() <= 80 &&
+             data.transactionType is string && data.transactionType in ['INCOME', 'EXPENSE', 'TRANSFER', 'SAVINGS_CONTRIBUTION', 'DEBT_PAYMENT'] &&
+             data.iconName is string && data.iconName.size() >= 1 && data.iconName.size() <= 40 &&
+             data.colorHex is string && data.colorHex.size() >= 4 && data.colorHex.size() <= 12 &&
+             data.isDefault is bool &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidCloudTransaction(data) {
+      return data.localId is int && data.localId > 0 &&
+             data.amountPiasters is int && data.amountPiasters >= 0 &&
+             data.transactionType is string && data.transactionType in ['INCOME', 'EXPENSE', 'TRANSFER', 'SAVINGS_CONTRIBUTION', 'DEBT_PAYMENT'] &&
+             data.accountLocalId is int && data.accountLocalId > 0 &&
+             (!('targetAccountLocalId' in data) || data.targetAccountLocalId == null || (data.targetAccountLocalId is int && data.targetAccountLocalId > 0)) &&
+             (!('categoryLocalId' in data) || data.categoryLocalId == null || (data.categoryLocalId is int && data.categoryLocalId > 0)) &&
+             data.description is string && data.description.size() >= 1 && data.description.size() <= 240 &&
+             data.notes is string && data.notes.size() <= 500 &&
+             data.source is string && data.source.size() >= 1 && data.source.size() <= 40 &&
+             (!('referenceNumber' in data) || data.referenceNumber == null || (data.referenceNumber is string && data.referenceNumber.size() <= 120)) &&
+             data.timestampMillis is int && data.timestampMillis >= 0 &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidCloudBudget(data) {
+      return data.localId is int && data.localId > 0 &&
+             data.name is string && data.name.size() >= 1 && data.name.size() <= 100 &&
+             (!('categoryLocalId' in data) || data.categoryLocalId == null || (data.categoryLocalId is int && data.categoryLocalId > 0)) &&
+             data.limitPiasters is int && data.limitPiasters > 0 &&
+             data.yearMonth is string && data.yearMonth.size() >= 6 && data.yearMonth.size() <= 10 &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidCloudSavingsGoal(data) {
+      return data.localId is int && data.localId > 0 &&
+             data.name is string && data.name.size() >= 1 && data.name.size() <= 100 &&
+             data.presetType is string && data.presetType.size() >= 1 && data.presetType.size() <= 40 &&
+             data.targetAmountPiasters is int && data.targetAmountPiasters > 0 &&
+             data.savedAmountPiasters is int && data.savedAmountPiasters >= 0 &&
+             data.status is string && data.status.size() >= 1 && data.status.size() <= 30 &&
+             data.colorHex is string && data.colorHex.size() >= 4 && data.colorHex.size() <= 12 &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidCloudMerchantRule(data) {
+      return data.localId is int && data.localId > 0 &&
+             data.keyword is string && data.keyword.size() >= 1 && data.keyword.size() <= 100 &&
+             data.normalizedKeyword is string && data.normalizedKeyword.size() >= 1 && data.normalizedKeyword.size() <= 100 &&
+             (!('categoryLocalId' in data) || data.categoryLocalId == null || (data.categoryLocalId is int && data.categoryLocalId > 0)) &&
+             (!('accountLocalId' in data) || data.accountLocalId == null || (data.accountLocalId is int && data.accountLocalId > 0)) &&
+             data.preferredType is string && data.preferredType in ['INCOME', 'EXPENSE', 'TRANSFER', 'SAVINGS_CONTRIBUTION', 'DEBT_PAYMENT'] &&
+             data.hitCount is int && data.hitCount >= 0 &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidCloudAiChatSession(data, chatId) {
+      return isValidId(data.sessionId) &&
+             data.sessionId == chatId &&
+             data.title is string && data.title.size() >= 1 && data.title.size() <= 120 &&
+             data.lastMessagePreview is string && data.lastMessagePreview.size() <= 200 &&
+             data.messageCount is int && data.messageCount >= 0 && data.messageCount <= 5000 &&
+             data.createdAtMillis is int && data.createdAtMillis >= 0 &&
+             data.updatedAtMillis is int && data.updatedAtMillis >= data.createdAtMillis &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidCloudAiChatMessage(data, chatId, messageId) {
+      return isValidId(data.messageId) &&
+             data.messageId == messageId &&
+             isValidId(data.sessionId) &&
+             data.sessionId == chatId &&
+             data.isUser is bool &&
+             data.text is string && data.text.size() >= 1 && data.text.size() <= 12000 &&
+             data.isError is bool &&
+             data.isUndone is bool &&
+             data.engineSource is string && data.engineSource in ['CLOUD_GEMINI', 'LOCAL_OFFLINE'] &&
+             data.executedActionsJson is string && data.executedActionsJson.size() <= 8000 &&
+             data.timestampMillis is int && data.timestampMillis >= 0 &&
+      isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidCloudInstallment(data) {
+      return data.localId is int && data.localId > 0 &&
+             data.name is string && data.name.size() >= 1 && data.name.size() <= 120 &&
+             data.creditor is string && data.creditor.size() >= 1 && data.creditor.size() <= 120 &&
+             (!('accountLocalId' in data) || data.accountLocalId == null || (data.accountLocalId is int && data.accountLocalId > 0)) &&
+             data.totalAmountPiasters is int && data.totalAmountPiasters >= 0 &&
+             data.installmentAmountPiasters is int && data.installmentAmountPiasters >= 0 &&
+             data.totalCount is int && data.totalCount >= 1 &&
+             data.paidCount is int && data.paidCount >= 0 &&
+             data.nextDueDateMillis is int && data.nextDueDateMillis >= 0 &&
+             data.frequency is string && data.frequency.size() >= 1 && data.frequency.size() <= 30 &&
+             data.status is string && data.status.size() >= 1 && data.status.size() <= 30 &&
+             (!('bnplProgramId' in data) || data.bnplProgramId == null || (data.bnplProgramId is int && data.bnplProgramId > 0)) &&
+             data.principalAmountPiasters is int && data.principalAmountPiasters >= 0 &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidCloudRecurringRule(data) {
+      return data.localId is int && data.localId > 0 &&
+             data.title is string && data.title.size() >= 1 && data.title.size() <= 120 &&
+             data.transactionType is string && data.transactionType in ['INCOME', 'EXPENSE', 'TRANSFER', 'SAVINGS_CONTRIBUTION', 'DEBT_PAYMENT'] &&
+             data.incomeSourceType is string && data.incomeSourceType.size() >= 1 && data.incomeSourceType.size() <= 40 &&
+             data.amountPiasters is int && data.amountPiasters >= 0 &&
+             data.accountLocalId is int && data.accountLocalId > 0 &&
+             (!('categoryLocalId' in data) || data.categoryLocalId == null || (data.categoryLocalId is int && data.categoryLocalId > 0)) &&
+             data.frequency is string && data.frequency.size() >= 1 && data.frequency.size() <= 30 &&
+             data.nextRunDateMillis is int && data.nextRunDateMillis >= 0 &&
+             data.notifyDaysBefore is int && data.notifyDaysBefore >= 0 && data.notifyDaysBefore <= 60 &&
+             data.isActive is bool &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidCloudDebt(data) {
+      return data.localId is int && data.localId > 0 &&
+             data.personName is string && data.personName.size() >= 1 && data.personName.size() <= 120 &&
+             data.direction is string && data.direction in ['OWED_TO_ME', 'OWED_BY_ME'] &&
+             data.totalAmountPiasters is int && data.totalAmountPiasters >= 0 &&
+             data.paidAmountPiasters is int && data.paidAmountPiasters >= 0 &&
+             (!('dueDateMillis' in data) || data.dueDateMillis == null || (data.dueDateMillis is int && data.dueDateMillis > 0)) &&
+             data.status is string && data.status in ['OPEN', 'PARTIAL', 'SETTLED'] &&
+             data.notes is string && data.notes.size() <= 500 &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidCloudBnplProgram(data) {
+      return data.localId is int && data.localId > 0 &&
+             data.providerCode is string && data.providerCode.size() >= 1 && data.providerCode.size() <= 50 &&
+             data.nameAr is string && data.nameAr.size() >= 1 && data.nameAr.size() <= 100 &&
+             data.nameEn is string && data.nameEn.size() >= 1 && data.nameEn.size() <= 100 &&
+             data.creditLimitPiasters is int && data.creditLimitPiasters >= 0 &&
+             data.manualUsedPiasters is int && data.manualUsedPiasters >= 0 &&
+             data.defaultAnnualInterestPercent is number && data.defaultAnnualInterestPercent >= 0 && data.defaultAnnualInterestPercent <= 200 &&
+             data.colorHex is string && data.colorHex.size() >= 4 && data.colorHex.size() <= 12 &&
+             data.isEnabled is bool &&
+             data.notes is string && data.notes.size() <= 500 &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidCloudFinancialSource(data) {
+      return data.localId is int && data.localId > 0 &&
+             data.code is string && data.code.size() >= 1 && data.code.size() <= 60 &&
+             data.displayNameAr is string && data.displayNameAr.size() >= 1 && data.displayNameAr.size() <= 100 &&
+             data.displayNameEn is string && data.displayNameEn.size() >= 1 && data.displayNameEn.size() <= 100 &&
+             data.senderKeywords is string && data.senderKeywords.size() <= 500 &&
+             data.packageNames is string && data.packageNames.size() <= 500 &&
+             (!('defaultAccountLocalId' in data) || data.defaultAccountLocalId == null || (data.defaultAccountLocalId is int && data.defaultAccountLocalId > 0)) &&
+             data.isEnabled is bool &&
+             data.isIgnored is bool &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidCloudSavingsCertificate(data) {
+      return data.localId is int && data.localId > 0 &&
+             data.title is string && data.title.size() >= 1 && data.title.size() <= 120 &&
+             data.assetKind is string && data.assetKind in ['BANK_CERTIFICATE', 'GOLD_RESERVE'] &&
+             data.institutionName is string && data.institutionName.size() <= 120 &&
+             data.principalPiasters is int && data.principalPiasters >= 0 &&
+             data.annualYieldPercent is number && data.annualYieldPercent >= 0 && data.annualYieldPercent <= 200 &&
+             data.payoutCycle is string && data.payoutCycle in ['MONTHLY', 'QUARTERLY', 'SEMI_ANNUAL', 'ANNUAL', 'MATURITY'] &&
+             (!('linkedAccountLocalId' in data) || data.linkedAccountLocalId == null || (data.linkedAccountLocalId is int && data.linkedAccountLocalId > 0)) &&
+             data.nextPayoutMillis is int && data.nextPayoutMillis >= 0 &&
+             (!('maturityMillis' in data) || data.maturityMillis == null || (data.maturityMillis is int && data.maturityMillis > 0)) &&
+             data.autoCreditInterest is bool &&
+             data.grams is number && data.grams >= 0 &&
+             data.karat is int && data.karat >= 1 && data.karat <= 24 &&
+             data.pricePerGramPiasters is int && data.pricePerGramPiasters >= 0 &&
+             data.notes is string && data.notes.size() <= 500 &&
+             data.isActive is bool &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    // 4. User Profile Document (/users/{userId})
+    match /users/{userId} {
+      allow get: if isOwner(userId) && isValidId(userId);
+      allow list: if isOwner(userId) && isValidId(userId);
+
+      allow create: if isOwner(userId) &&
+                       isValidId(userId) &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().keys().hasAll(['userId', 'displayName', 'currencyCode', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'displayName', 'email', 'currencyCode', 'themePreset', 'lastSyncedAtMillis', 'createdAt', 'updatedAt']) &&
+                       isValidUserProfile(incoming());
+
+      allow update: if isOwner(userId) &&
+                       isValidId(userId) &&
+                       isValidUserProfile(incoming()) && (
+                         incoming().userId == existing().userId &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'email', 'currencyCode', 'themePreset', 'lastSyncedAtMillis', 'updatedAt'])
+                       );
+
+      allow delete: if isOwner(userId) && isValidId(userId);
+
+      // 5. Financial Accounts (/users/{userId}/accounts/{accountId})
+      match /accounts/{accountId} {
+        allow get: if isOwner(userId) && isValidId(accountId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(accountId) &&
+                         incoming().keys().hasAll(['localId', 'name', 'accountType', 'openingBalancePiasters', 'currentBalancePiasters', 'currency', 'colorHex', 'iconName', 'isArchived', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['localId', 'name', 'accountType', 'openingBalancePiasters', 'currentBalancePiasters', 'currency', 'colorHex', 'iconName', 'isArchived', 'createdAt', 'updatedAt']) &&
+                         isValidCloudAccount(incoming());
+
+        allow update: if isOwner(userId) &&
+                         isValidId(accountId) &&
+                         isValidCloudAccount(incoming()) && (
+                           incoming().localId == existing().localId &&
+                           incoming().createdAt == existing().createdAt &&
+                           incoming().diff(existing()).affectedKeys().hasOnly(['name', 'accountType', 'openingBalancePiasters', 'currentBalancePiasters', 'currency', 'colorHex', 'iconName', 'isArchived', 'updatedAt'])
+                         );
+
+        allow delete: if isOwner(userId) && isValidId(accountId);
+      }
+
+      // 6. Categories (/users/{userId}/categories/{categoryId})
+      match /categories/{categoryId} {
+        allow get: if isOwner(userId) && isValidId(categoryId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(categoryId) &&
+                         incoming().keys().hasAll(['localId', 'nameAr', 'nameEn', 'transactionType', 'iconName', 'colorHex', 'isDefault', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['localId', 'nameAr', 'nameEn', 'transactionType', 'iconName', 'colorHex', 'isDefault', 'createdAt', 'updatedAt']) &&
+                         isValidCloudCategory(incoming());
+
+        allow update: if isOwner(userId) &&
+                         isValidId(categoryId) &&
+                         isValidCloudCategory(incoming()) && (
+                           incoming().localId == existing().localId &&
+                           incoming().createdAt == existing().createdAt &&
+                           incoming().diff(existing()).affectedKeys().hasOnly(['nameAr', 'nameEn', 'transactionType', 'iconName', 'colorHex', 'isDefault', 'updatedAt'])
+                         );
+
+        allow delete: if isOwner(userId) && isValidId(categoryId);
+      }
+
+      // 7. Financial Transactions (/users/{userId}/transactions/{transactionId})
+      match /transactions/{transactionId} {
+        allow get: if isOwner(userId) && isValidId(transactionId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(transactionId) &&
+                         incoming().keys().hasAll(['localId', 'amountPiasters', 'transactionType', 'accountLocalId', 'description', 'notes', 'source', 'timestampMillis', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['localId', 'amountPiasters', 'transactionType', 'accountLocalId', 'targetAccountLocalId', 'categoryLocalId', 'description', 'notes', 'source', 'referenceNumber', 'timestampMillis', 'createdAt', 'updatedAt']) &&
+                         isValidCloudTransaction(incoming());
+
+        allow update: if isOwner(userId) &&
+                         isValidId(transactionId) &&
+                         isValidCloudTransaction(incoming()) && (
+                           incoming().localId == existing().localId &&
+                           incoming().createdAt == existing().createdAt &&
+                           incoming().diff(existing()).affectedKeys().hasOnly(['amountPiasters', 'transactionType', 'accountLocalId', 'targetAccountLocalId', 'categoryLocalId', 'description', 'notes', 'source', 'referenceNumber', 'timestampMillis', 'updatedAt'])
+                         );
+
+        allow delete: if isOwner(userId) && isValidId(transactionId);
+      }
+
+      // 8. Budgets (/users/{userId}/budgets/{budgetId})
+      match /budgets/{budgetId} {
+        allow get: if isOwner(userId) && isValidId(budgetId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(budgetId) &&
+                         incoming().keys().hasAll(['localId', 'name', 'limitPiasters', 'yearMonth', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['localId', 'name', 'categoryLocalId', 'limitPiasters', 'yearMonth', 'createdAt', 'updatedAt']) &&
+                         isValidCloudBudget(incoming());
+
+        allow update: if isOwner(userId) &&
+                         isValidId(budgetId) &&
+                         isValidCloudBudget(incoming()) && (
+                           incoming().localId == existing().localId &&
+                           incoming().createdAt == existing().createdAt &&
+                           incoming().diff(existing()).affectedKeys().hasOnly(['name', 'categoryLocalId', 'limitPiasters', 'yearMonth', 'updatedAt'])
+                         );
+
+        allow delete: if isOwner(userId) && isValidId(budgetId);
+      }
+
+      // 9. Savings Goals (/users/{userId}/goals/{goalId})
+      match /goals/{goalId} {
+        allow get: if isOwner(userId) && isValidId(goalId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(goalId) &&
+                         incoming().keys().hasAll(['localId', 'name', 'presetType', 'targetAmountPiasters', 'savedAmountPiasters', 'status', 'colorHex', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['localId', 'name', 'presetType', 'targetAmountPiasters', 'savedAmountPiasters', 'status', 'colorHex', 'createdAt', 'updatedAt']) &&
+                         isValidCloudSavingsGoal(incoming());
+
+        allow update: if isOwner(userId) &&
+                         isValidId(goalId) &&
+                         isValidCloudSavingsGoal(incoming()) && (
+                           incoming().localId == existing().localId &&
+                           incoming().createdAt == existing().createdAt &&
+                           incoming().diff(existing()).affectedKeys().hasOnly(['name', 'presetType', 'targetAmountPiasters', 'savedAmountPiasters', 'status', 'colorHex', 'updatedAt'])
+                         );
+
+        allow delete: if isOwner(userId) && isValidId(goalId);
+      }
+
+      // 10. Merchant Rules (/users/{userId}/merchant_rules/{ruleId})
+      match /merchant_rules/{ruleId} {
+        allow get: if isOwner(userId) && isValidId(ruleId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(ruleId) &&
+                         incoming().keys().hasAll(['localId', 'keyword', 'normalizedKeyword', 'preferredType', 'hitCount', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['localId', 'keyword', 'normalizedKeyword', 'categoryLocalId', 'accountLocalId', 'preferredType', 'hitCount', 'createdAt', 'updatedAt']) &&
+                         isValidCloudMerchantRule(incoming());
+
+        allow update: if isOwner(userId) &&
+                         isValidId(ruleId) &&
+                         isValidCloudMerchantRule(incoming()) && (
+                           incoming().localId == existing().localId &&
+                           incoming().createdAt == existing().createdAt &&
+                           incoming().diff(existing()).affectedKeys().hasOnly(['keyword', 'normalizedKeyword', 'categoryLocalId', 'accountLocalId', 'preferredType', 'hitCount', 'updatedAt'])
+                         );
+
+        allow delete: if isOwner(userId) && isValidId(ruleId);
+      }
+
+      // 11. AI Chat Sessions & Messages (/users/{userId}/ai_chats/{chatId}/messages/{messageId})
+      match /ai_chats/{chatId} {
+        allow get: if isOwner(userId) && isValidId(chatId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(chatId) &&
+                         incoming().keys().hasAll(['sessionId', 'title', 'lastMessagePreview', 'messageCount', 'createdAtMillis', 'updatedAtMillis', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['sessionId', 'title', 'lastMessagePreview', 'messageCount', 'createdAtMillis', 'updatedAtMillis', 'createdAt', 'updatedAt']) &&
+                         isValidCloudAiChatSession(incoming(), chatId);
+
+        allow update: if isOwner(userId) &&
+                         isValidId(chatId) &&
+                         isValidCloudAiChatSession(incoming(), chatId) && (
+                           incoming().sessionId == existing().sessionId &&
+                           incoming().createdAtMillis == existing().createdAtMillis &&
+                           incoming().createdAt == existing().createdAt &&
+                           incoming().diff(existing()).affectedKeys().hasOnly(['title', 'lastMessagePreview', 'messageCount', 'updatedAtMillis', 'updatedAt'])
+                         );
+
+        allow delete: if isOwner(userId) && isValidId(chatId);
+
+        match /messages/{messageId} {
+          allow get: if isOwner(userId) && isValidId(chatId) && isValidId(messageId);
+          allow list: if isOwner(userId) && isValidId(chatId);
+
+          allow create: if isOwner(userId) &&
+                           isValidId(chatId) &&
+                           isValidId(messageId) &&
+                           (exists(/databases/$(database)/documents/users/$(userId)/ai_chats/$(chatId)) ||
+                            existsAfter(/databases/$(database)/documents/users/$(userId)/ai_chats/$(chatId))) &&
+                           incoming().keys().hasAll(['messageId', 'sessionId', 'isUser', 'text', 'isError', 'isUndone', 'engineSource', 'executedActionsJson', 'timestampMillis', 'createdAt', 'updatedAt']) &&
+                           incoming().keys().hasOnly(['messageId', 'sessionId', 'isUser', 'text', 'isError', 'isUndone', 'engineSource', 'executedActionsJson', 'timestampMillis', 'createdAt', 'updatedAt']) &&
+                           isValidCloudAiChatMessage(incoming(), chatId, messageId);
+
+          allow update: if isOwner(userId) &&
+                           isValidId(chatId) &&
+                           isValidId(messageId) &&
+                           isValidCloudAiChatMessage(incoming(), chatId, messageId) && (
+                             incoming().messageId == existing().messageId &&
+                             incoming().sessionId == existing().sessionId &&
+                             incoming().isUser == existing().isUser &&
+                             incoming().timestampMillis == existing().timestampMillis &&
+                             incoming().createdAt == existing().createdAt &&
+                             incoming().diff(existing()).affectedKeys().hasOnly(['text', 'isError', 'isUndone', 'engineSource', 'executedActionsJson', 'updatedAt'])
+                           );
+
+          allow delete: if isOwner(userId) && isValidId(chatId) && isValidId(messageId);
+        }
+      }
+
+      // 12. Installments (/users/{userId}/installments/{installmentId})
+      match /installments/{installmentId} {
+        allow get: if isOwner(userId) && isValidId(installmentId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(installmentId) &&
+                         incoming().keys().hasAll(['localId', 'name', 'creditor', 'totalAmountPiasters', 'installmentAmountPiasters', 'totalCount', 'paidCount', 'nextDueDateMillis', 'frequency', 'status', 'principalAmountPiasters', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['localId', 'name', 'creditor', 'accountLocalId', 'totalAmountPiasters', 'installmentAmountPiasters', 'totalCount', 'paidCount', 'nextDueDateMillis', 'frequency', 'status', 'bnplProgramId', 'principalAmountPiasters', 'createdAt', 'updatedAt']) &&
+                         isValidCloudInstallment(incoming());
+
+        allow update: if isOwner(userId) &&
+                         isValidId(installmentId) &&
+                         isValidCloudInstallment(incoming()) && (
+                           incoming().localId == existing().localId &&
+                           incoming().createdAt == existing().createdAt &&
+                           incoming().diff(existing()).affectedKeys().hasOnly(['name', 'creditor', 'accountLocalId', 'totalAmountPiasters', 'installmentAmountPiasters', 'totalCount', 'paidCount', 'nextDueDateMillis', 'frequency', 'status', 'bnplProgramId', 'principalAmountPiasters', 'updatedAt'])
+                         );
+
+        allow delete: if isOwner(userId) && isValidId(installmentId);
+      }
+
+      // 13. Recurring Rules (/users/{userId}/recurring_rules/{ruleId})
+      match /recurring_rules/{ruleId} {
+        allow get: if isOwner(userId) && isValidId(ruleId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(ruleId) &&
+                         incoming().keys().hasAll(['localId', 'title', 'transactionType', 'incomeSourceType', 'amountPiasters', 'accountLocalId', 'frequency', 'nextRunDateMillis', 'notifyDaysBefore', 'isActive', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['localId', 'title', 'transactionType', 'incomeSourceType', 'amountPiasters', 'accountLocalId', 'categoryLocalId', 'frequency', 'nextRunDateMillis', 'notifyDaysBefore', 'isActive', 'createdAt', 'updatedAt']) &&
+                         isValidCloudRecurringRule(incoming());
+
+        allow update: if isOwner(userId) &&
+                         isValidId(ruleId) &&
+                         isValidCloudRecurringRule(incoming()) && (
+                           incoming().localId == existing().localId &&
+                           incoming().createdAt == existing().createdAt &&
+                           incoming().diff(existing()).affectedKeys().hasOnly(['title', 'transactionType', 'incomeSourceType', 'amountPiasters', 'accountLocalId', 'categoryLocalId', 'frequency', 'nextRunDateMillis', 'notifyDaysBefore', 'isActive', 'updatedAt'])
+                         );
+
+        allow delete: if isOwner(userId) && isValidId(ruleId);
+      }
+
+      // 14. Debts (/users/{userId}/debts/{debtId})
+      match /debts/{debtId} {
+        allow get: if isOwner(userId) && isValidId(debtId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(debtId) &&
+                         incoming().keys().hasAll(['localId', 'personName', 'direction', 'totalAmountPiasters', 'paidAmountPiasters', 'status', 'notes', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['localId', 'personName', 'direction', 'totalAmountPiasters', 'paidAmountPiasters', 'dueDateMillis', 'status', 'notes', 'createdAt', 'updatedAt']) &&
+                         isValidCloudDebt(incoming());
+
+        allow update: if isOwner(userId) &&
+                         isValidId(debtId) &&
+                         isValidCloudDebt(incoming()) && (
+                           incoming().localId == existing().localId &&
+                           incoming().createdAt == existing().createdAt &&
+                           incoming().diff(existing()).affectedKeys().hasOnly(['personName', 'direction', 'totalAmountPiasters', 'paidAmountPiasters', 'dueDateMillis', 'status', 'notes', 'updatedAt'])
+                         );
+
+        allow delete: if isOwner(userId) && isValidId(debtId);
+      }
+
+      // 15. BNPL Programs (/users/{userId}/bnpl_programs/{programId})
+      match /bnpl_programs/{programId} {
+        allow get: if isOwner(userId) && isValidId(programId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(programId) &&
+                         incoming().keys().hasAll(['localId', 'providerCode', 'nameAr', 'nameEn', 'creditLimitPiasters', 'manualUsedPiasters', 'defaultAnnualInterestPercent', 'colorHex', 'isEnabled', 'notes', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['localId', 'providerCode', 'nameAr', 'nameEn', 'creditLimitPiasters', 'manualUsedPiasters', 'defaultAnnualInterestPercent', 'colorHex', 'isEnabled', 'notes', 'createdAt', 'updatedAt']) &&
+                         isValidCloudBnplProgram(incoming());
+
+        allow update: if isOwner(userId) &&
+                         isValidId(programId) &&
+                         isValidCloudBnplProgram(incoming()) && (
+                           incoming().localId == existing().localId &&
+                           incoming().createdAt == existing().createdAt &&
+                           incoming().diff(existing()).affectedKeys().hasOnly(['providerCode', 'nameAr', 'nameEn', 'creditLimitPiasters', 'manualUsedPiasters', 'defaultAnnualInterestPercent', 'colorHex', 'isEnabled', 'notes', 'updatedAt'])
+                         );
+
+        allow delete: if isOwner(userId) && isValidId(programId);
+      }
+
+      // 16. Financial Sources (/users/{userId}/financial_sources/{sourceId})
+      match /financial_sources/{sourceId} {
+        allow get: if isOwner(userId) && isValidId(sourceId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(sourceId) &&
+                         incoming().keys().hasAll(['localId', 'code', 'displayNameAr', 'displayNameEn', 'senderKeywords', 'packageNames', 'isEnabled', 'isIgnored', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['localId', 'code', 'displayNameAr', 'displayNameEn', 'senderKeywords', 'packageNames', 'defaultAccountLocalId', 'isEnabled', 'isIgnored', 'createdAt', 'updatedAt']) &&
+                         isValidCloudFinancialSource(incoming());
+
+        allow update: if isOwner(userId) &&
+                         isValidId(sourceId) &&
+                         isValidCloudFinancialSource(incoming()) && (
+                           incoming().localId == existing().localId &&
+                           incoming().createdAt == existing().createdAt &&
+                           incoming().diff(existing()).affectedKeys().hasOnly(['code', 'displayNameAr', 'displayNameEn', 'senderKeywords', 'packageNames', 'defaultAccountLocalId', 'isEnabled', 'isIgnored', 'updatedAt'])
+                         );
+
+        allow delete: if isOwner(userId) && isValidId(sourceId);
+      }
+
+      // 17. Savings Certificates & Gold Reserves (/users/{userId}/savings_certificates/{certId})
+      match /savings_certificates/{certId} {
+        allow get: if isOwner(userId) && isValidId(certId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(certId) &&
+                         incoming().keys().hasAll(['localId', 'title', 'assetKind', 'institutionName', 'principalPiasters', 'annualYieldPercent', 'payoutCycle', 'nextPayoutMillis', 'autoCreditInterest', 'grams', 'karat', 'pricePerGramPiasters', 'notes', 'isActive', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['localId', 'title', 'assetKind', 'institutionName', 'principalPiasters', 'annualYieldPercent', 'payoutCycle', 'linkedAccountLocalId', 'nextPayoutMillis', 'maturityMillis', 'autoCreditInterest', 'grams', 'karat', 'pricePerGramPiasters', 'notes', 'isActive', 'createdAt', 'updatedAt']) &&
+                         isValidCloudSavingsCertificate(incoming());
+
+        allow update: if isOwner(userId) &&
+                         isValidId(certId) &&
+                         isValidCloudSavingsCertificate(incoming()) && (
+                           incoming().localId == existing().localId &&
+                           incoming().createdAt == existing().createdAt &&
+                           incoming().diff(existing()).affectedKeys().hasOnly(['title', 'assetKind', 'institutionName', 'principalPiasters', 'annualYieldPercent', 'payoutCycle', 'linkedAccountLocalId', 'nextPayoutMillis', 'maturityMillis', 'autoCreditInterest', 'grams', 'karat', 'pricePerGramPiasters', 'notes', 'isActive', 'updatedAt'])
+                         );
+
+        allow delete: if isOwner(userId) && isValidId(certId);
+      }
+    }
+  }
+}

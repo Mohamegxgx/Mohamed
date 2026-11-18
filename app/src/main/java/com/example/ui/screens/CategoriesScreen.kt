@@ -157,7 +157,7 @@ fun CategoriesScreen(
                 ) {
                     items(filtered, key = { it.id }) { cat ->
                         val accent = parseHexColor(cat.colorHex)
-                        FinancialCard {
+                        FinancialCard(borderColor = accent.copy(alpha = 0.32f)) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -215,7 +215,11 @@ fun CategoriesScreen(
                         items(state.merchantRules, key = { it.id }) { rule ->
                             val cat = rule.categoryId?.let { categoryMap[it] }
                             val acc = rule.accountId?.let { accountMap[it] }
-                            FinancialCard(modifier = Modifier.testTag("merchant_rule_card_${rule.id}")) {
+                            FinancialCard(
+                                elevated = true,
+                                borderColor = SkyCyan.copy(alpha = 0.35f),
+                                modifier = Modifier.testTag("merchant_rule_card_${rule.id}")
+                            ) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -280,7 +284,7 @@ fun CategoriesScreen(
         var nameAr by remember { mutableStateOf("") }
         var nameEn by remember { mutableStateOf("") }
         var type by remember { mutableStateOf(filterType) }
-        var colorHex by remember { mutableStateOf("#10B981") }
+        var colorHex by remember { mutableStateOf("#22D3EE") }
 
         AlertDialog(
             onDismissRequest = { showAddCategoryDialog = false },
@@ -305,7 +309,7 @@ fun CategoriesScreen(
                         singleLine = true
                     )
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        listOf("#10B981", "#38BDF8", "#F59E0B", "#EF4444", "#A855F7", "#EC4899").forEach { hex ->
+                        listOf("#22D3EE", "#4F8CFF", "#8B5CF6", "#F59E0B", "#EF4444", "#F472B6").forEach { hex ->
                             FilterChip(
                                 selected = colorHex == hex,
                                 onClick = { colorHex = hex },

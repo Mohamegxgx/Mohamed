@@ -2,7 +2,37 @@ package com.example.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// Primary Semantic & Emerald Obsidian Palette (Default)
+// Flagship Gemini Hydrogen Quantum Palette (Default)
+val HydrogenBg = Color(0xFF040712)
+val HydrogenSurface = Color(0xFF0A1022)
+val HydrogenCard = Color(0xFF101933)
+val HydrogenCardElevated = Color(0xFF172447)
+val HydrogenBorder = Color(0xFF2B3F70)
+
+val HydrogenPrimary = Color(0xFF4F8CFF)
+val HydrogenBright = Color(0xFF7CB2FF)
+val HydrogenCyan = Color(0xFF38BDF8)
+val HydrogenAuroraTeal = Color(0xFF22D3EE)
+val HydrogenIris = Color(0xFF8B5CF6)
+val HydrogenIrisBright = Color(0xFFA78BFA)
+val HydrogenMagenta = Color(0xFFF472B6)
+
+val HydrogenLightBg = Color(0xFFF3F6FF)
+val HydrogenLightSurface = Color(0xFFFFFFFF)
+val HydrogenLightCardElevated = Color(0xFFEAF0FF)
+val HydrogenLightBorder = Color(0xFFCDE0FF)
+val HydrogenLightPrimary = Color(0xFF2563EB)
+val HydrogenLightIris = Color(0xFF7C3AED)
+val HydrogenLightAurora = Color(0xFF0284C7)
+
+// Semantic Accents
+val GoldAccent = Color(0xFFF59E0B)
+val GoldSoft = Color(0xFFFCD34D)
+val SkyCyan = Color(0xFF38BDF8)
+val CoralExpense = Color(0xFFEF4444)
+val CoralSoft = Color(0xFFF87171)
+
+// Legacy Emerald Obsidian Palette (Retained for backwards-compatibility preset selection)
 val ObsidianBg = Color(0xFF070B12)
 val MidnightSurface = Color(0xFF0F1624)
 val SlateCard = Color(0xFF162032)
@@ -12,11 +42,6 @@ val SlateBorder = Color(0xFF28354C)
 val EmeraldPrimary = Color(0xFF10B981)
 val EmeraldBright = Color(0xFF34D399)
 val EmeraldDeep = Color(0xFF047857)
-val GoldAccent = Color(0xFFF59E0B)
-val GoldSoft = Color(0xFFFCD34D)
-val SkyCyan = Color(0xFF38BDF8)
-val CoralExpense = Color(0xFFEF4444)
-val CoralSoft = Color(0xFFF87171)
 
 // Crisp Financial Light Mode
 val LightBg = Color(0xFFF4F7FB)
@@ -59,7 +84,7 @@ val AmberPrimary = Color(0xFFF59E0B)
 val AmberBright = Color(0xFFFBBF24)
 val AmberLightPrimary = Color(0xFFD97706)
 
-fun parseHexColor(hex: String, fallback: Color = EmeraldPrimary): Color {
+fun parseHexColor(hex: String, fallback: Color = HydrogenPrimary): Color {
     return try {
         val clean = hex.removePrefix("#")
         val colorInt = when (clean.length) {

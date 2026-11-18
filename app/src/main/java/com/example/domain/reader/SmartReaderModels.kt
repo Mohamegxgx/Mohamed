@@ -32,7 +32,10 @@ data class ParsedFinancialMessage(
     val defaultAccountHint: String,
     val extractedSummary: String,
     val isIncomplete: Boolean = false,
-    val matchedStrategyId: String = "generic"
+    val matchedStrategyId: String = "generic",
+    val direction: MessageDirection = MessageDirection.UNKNOWN,
+    val directionReasonAr: String = "",
+    val directionReasonEn: String = ""
 )
 
 sealed class ParseOutcome {

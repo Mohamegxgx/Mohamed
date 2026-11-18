@@ -4,6 +4,7 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,27 +28,39 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Backup
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.PictureAsPdf
 import androidx.compose.material.icons.rounded.Restore
 import androidx.compose.material.icons.rounded.Share
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
 import com.example.domain.engine.MoneyFormatter
 import com.example.domain.model.InstallmentStatus
 import com.example.domain.model.TransactionType
@@ -56,9 +69,10 @@ import com.example.ui.components.EmptyStateCard
 import com.example.ui.components.FinancialCard
 import com.example.ui.components.formatReadableDate
 import com.example.ui.theme.CoralExpense
-import com.example.ui.theme.EmeraldPrimary
 import com.example.ui.theme.GoldAccent
+import com.example.ui.theme.LocalThemePresetSpec
 import com.example.ui.theme.RobotoMonoFontFamily
+import com.example.ui.theme.semanticPositiveColor
 import com.example.ui.viewmodel.MainUiState
 import java.util.Calendar
 
@@ -78,6 +92,7 @@ fun CalendarScreen(
 ) {
     val lang = state.preferences.language
     val hide = state.preferences.hideAmounts
+    val positiveColor = semanticPositiveColor()
 
     val cal = remember { Calendar.getInstance() }
     val currentMonth = cal.get(Calendar.MONTH)
@@ -133,10 +148,15 @@ fun CalendarScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             item {
-                FinancialCard {
+                val prismColors = LocalThemePresetSpec.current.prismGlowColors
+                FinancialCard(
+                    elevated = true,
+                    borderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.42f)
+                ) {
                     Text(
                         text = AppStrings.text("جدول الشهر الحالي", "Current Month Schedule", lang),
-                        style = MaterialTheme.typography.titleMedium
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
                     )
                     Spacer(Modifier.height(10.dp))
                     val rows = (1..daysInMonth).chunked(7)
@@ -155,16 +175,26 @@ fun CalendarScreen(
                                             .background(
                                                 if (dayEvents.isNotEmpty()) MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
                                                 else MaterialTheme.colorScheme.surface
+                                            )
+                                            .then(
+                                                if (dayEvents.isNotEmpty()) {
+                                                    Modifier.border(
+                                                        width = 1.dp,
+                                                        brush = Brush.linearGradient(prismColors),
+                                                        shape = RoundedCornerShape(10.dp)
+                                                    )
+                                                } else Modifier
                                             ),
                                         contentAlignment = Alignment.Center
                                     ) {
                                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                             Text(
                                                 text = "$day",
-                                                style = MaterialTheme.typography.labelLarge.copy(fontFamily = RobotoMonoFontFamily)
+                                                style = MaterialTheme.typography.labelLarge.copy(fontFamily = RobotoMonoFontFamily),
+                                                fontWeight = if (dayEvents.isNotEmpty()) FontWeight.Bold else FontWeight.Normal
                                             )
                                             Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                                                if (hasIncome) Box(Modifier.size(5.dp).clip(CircleShape).background(EmeraldPrimary))
+                                                if (hasIncome) Box(Modifier.size(5.dp).clip(CircleShape).background(positiveColor))
                                                 if (hasExpense) Box(Modifier.size(5.dp).clip(CircleShape).background(GoldAccent))
                                             }
                                         }
@@ -207,7 +237,7 @@ fun CalendarScreen(
                             Text(
                                 text = MoneyFormatter.formatPiasters(ev.amountPiasters, language = lang, hideAmounts = hide),
                                 style = MaterialTheme.typography.titleMedium.copy(fontFamily = RobotoMonoFontFamily),
-                                color = if (ev.isIncome) EmeraldPrimary else CoralExpense
+                                color = if (ev.isIncome) positiveColor else CoralExpense
                             )
                         }
                     }
@@ -226,12 +256,20 @@ fun ReportsScreen(
     onShareJsonBackup: () -> Unit,
     onSaveBackupToUri: (Uri) -> Unit,
     onRestoreBackupFromUri: (Uri) -> Unit,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onSaveEncryptedBackupToUri: (Uri, String) -> Unit = { _, _ -> },
+    onInspectBackupUri: suspend (Uri) -> Pair<String, Boolean>? = { null },
+    onRestoreBackupContent: (rawText: String, password: String?) -> Unit = { _, _ -> }
 ) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     val lang = state.preferences.language
     val hide = state.preferences.hideAmounts
     val m = state.dashboardMetrics
+
+    var showEncryptPasswordDialog by remember { mutableStateOf(false) }
+    var pendingEncryptPassword by remember { mutableStateOf<String?>(null) }
+    var pendingEncryptedRestoreContent by remember { mutableStateOf<String?>(null) }
 
     val createBackupLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/json")
@@ -239,10 +277,31 @@ fun ReportsScreen(
         if (uri != null) onSaveBackupToUri(uri)
     }
 
+    val createEncryptedBackupLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/octet-stream")
+    ) { uri ->
+        val pwd = pendingEncryptPassword
+        pendingEncryptPassword = null
+        if (uri != null && !pwd.isNullOrBlank()) {
+            onSaveEncryptedBackupToUri(uri, pwd)
+        }
+    }
+
     val restoreBackupLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
-        if (uri != null) onRestoreBackupFromUri(uri)
+        if (uri != null) {
+            coroutineScope.launch {
+                val inspected = onInspectBackupUri(uri)
+                if (inspected == null) {
+                    onRestoreBackupFromUri(uri)
+                } else if (inspected.second) {
+                    pendingEncryptedRestoreContent = inspected.first
+                } else {
+                    onRestoreBackupContent(inspected.first, null)
+                }
+            }
+        }
     }
 
     Scaffold(
@@ -263,8 +322,15 @@ fun ReportsScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             item {
-                FinancialCard {
-                    Text(AppStrings.text("ملخص التقرير المالي للفترة المختارة", "Selected Period Report Summary", lang), style = MaterialTheme.typography.titleMedium)
+                FinancialCard(
+                    elevated = true,
+                    borderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.42f)
+                ) {
+                    Text(
+                        AppStrings.text("ملخص التقرير المالي للفترة المختارة", "Selected Period Report Summary", lang),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
                     Spacer(Modifier.height(8.dp))
                     ReportLine(AppStrings.text("الفترة", "Period", lang), AppStrings.timeFilterLabel(state.timeFilter, lang))
                     ReportLine(AppStrings.text("تقرير الدخل", "Income Total", lang), MoneyFormatter.formatPiasters(m.totalIncomePiasters, language = lang, hideAmounts = hide))
@@ -276,8 +342,12 @@ fun ReportsScreen(
             }
 
             item {
-                FinancialCard {
-                    Text(AppStrings.text("تصدير ومشاركة التقارير", "Export & Share Reports", lang), style = MaterialTheme.typography.titleMedium)
+                FinancialCard(borderColor = MaterialTheme.colorScheme.secondary.copy(alpha = 0.38f)) {
+                    Text(
+                        AppStrings.text("تصدير ومشاركة التقارير", "Export & Share Reports", lang),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
                     Spacer(Modifier.height(10.dp))
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(onClick = onExportCsv, modifier = Modifier.testTag("export_csv_btn")) {
@@ -304,27 +374,137 @@ fun ReportsScreen(
                     Spacer(Modifier.height(10.dp))
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(
+                            onClick = { showEncryptPasswordDialog = true },
+                            modifier = Modifier
+                                .minimumInteractiveComponentSize()
+                                .testTag("save_encrypted_backup_btn")
+                        ) {
+                            Icon(Icons.Rounded.Lock, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Text(
+                                AppStrings.text("حفظ نسخة مشفرة (AES-256)", "Save Encrypted (AES-256)", lang),
+                                modifier = Modifier.padding(start = 6.dp)
+                            )
+                        }
+                        OutlinedButton(
                             onClick = { createBackupLauncher.launch("elbagorry_backup_${System.currentTimeMillis()}.json") },
                             modifier = Modifier.testTag("save_json_backup_btn")
                         ) {
                             Icon(Icons.Rounded.Download, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Text(AppStrings.text("حفظ نسخة على الجهاز", "Save JSON", lang), modifier = Modifier.padding(start = 6.dp))
+                            Text(AppStrings.text("حفظ نسخة JSON", "Save JSON", lang), modifier = Modifier.padding(start = 6.dp))
                         }
                         OutlinedButton(onClick = onShareJsonBackup, modifier = Modifier.testTag("share_json_backup_btn")) {
                             Icon(Icons.Rounded.Share, contentDescription = null, modifier = Modifier.size(18.dp))
                             Text(AppStrings.text("مشاركة النسخة", "Share JSON", lang), modifier = Modifier.padding(start = 6.dp))
                         }
                         OutlinedButton(
-                            onClick = { restoreBackupLauncher.launch(arrayOf("application/json", "*/*")) },
+                            onClick = { restoreBackupLauncher.launch(arrayOf("application/json", "application/octet-stream", "*/*")) },
                             modifier = Modifier.testTag("restore_json_backup_btn")
                         ) {
                             Icon(Icons.Rounded.Restore, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Text(AppStrings.text("استعادة نسخة JSON", "Restore JSON", lang), modifier = Modifier.padding(start = 6.dp))
+                            Text(AppStrings.text("استعادة نسخة احتياطية", "Restore Backup", lang), modifier = Modifier.padding(start = 6.dp))
                         }
                     }
                 }
             }
         }
+    }
+
+    if (showEncryptPasswordDialog) {
+        var password by remember { mutableStateOf("") }
+        var confirmPassword by remember { mutableStateOf("") }
+        val valid = password.length >= 4 && password == confirmPassword
+
+        AlertDialog(
+            onDismissRequest = { showEncryptPasswordDialog = false },
+            title = { Text(AppStrings.text("تشفير النسخة الاحتياطية (AES-256)", "Encrypt Backup (AES-256)", lang)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = AppStrings.text(
+                            "أدخل كلمة مرور قوية (4 أحرف على الأقل). ستحتاجها عند استعادة هذه النسخة.",
+                            "Enter a strong passphrase (min 4 chars). You will need it to restore this backup.",
+                            lang
+                        ),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    OutlinedTextField(
+                        value = password,
+                        onValueChange = { password = it },
+                        label = { Text(AppStrings.text("كلمة المرور", "Password", lang)) },
+                        visualTransformation = PasswordVisualTransformation(),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().testTag("encrypt_backup_password_input")
+                    )
+                    OutlinedTextField(
+                        value = confirmPassword,
+                        onValueChange = { confirmPassword = it },
+                        label = { Text(AppStrings.text("تأكيد كلمة المرور", "Confirm Password", lang)) },
+                        visualTransformation = PasswordVisualTransformation(),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        pendingEncryptPassword = password
+                        showEncryptPasswordDialog = false
+                        createEncryptedBackupLauncher.launch("elbagorry_secure_${System.currentTimeMillis()}.ebk")
+                    },
+                    enabled = valid,
+                    modifier = Modifier.testTag("confirm_encrypt_backup_password_btn")
+                ) {
+                    Text(AppStrings.text("تشفير وحفظ", "Encrypt & Save", lang))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showEncryptPasswordDialog = false }) { Text(AppStrings.text("إلغاء", "Cancel", lang)) }
+            }
+        )
+    }
+
+    pendingEncryptedRestoreContent?.let { rawEncrypted ->
+        var restorePwd by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { pendingEncryptedRestoreContent = null },
+            title = { Text(AppStrings.text("نسخة احتياطية مشفرة", "Encrypted Backup", lang)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = AppStrings.text(
+                            "هذه النسخة محمية بتشفير AES-256. أدخل كلمة المرور لفك التشفير والاستعادة.",
+                            "This backup is encrypted with AES-256. Enter its password to restore.",
+                            lang
+                        ),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    OutlinedTextField(
+                        value = restorePwd,
+                        onValueChange = { restorePwd = it },
+                        label = { Text(AppStrings.text("كلمة المرور", "Password", lang)) },
+                        visualTransformation = PasswordVisualTransformation(),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().testTag("restore_password_input")
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onRestoreBackupContent(rawEncrypted, restorePwd)
+                        pendingEncryptedRestoreContent = null
+                    },
+                    enabled = restorePwd.isNotBlank(),
+                    modifier = Modifier.testTag("restore_password_dialog_confirm")
+                ) {
+                    Text(AppStrings.text("فك التشفير والاستعادة", "Decrypt & Restore", lang))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingEncryptedRestoreContent = null }) { Text(AppStrings.text("إلغاء", "Cancel", lang)) }
+            }
+        )
     }
 }
 

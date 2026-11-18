@@ -27,7 +27,9 @@ class FinancialMessageParser(
     fun parse(
         rawBody: String,
         sender: String = "",
-        messageTimestampMillis: Long = System.currentTimeMillis()
+        messageTimestampMillis: Long = System.currentTimeMillis(),
+        knownAccountBalancePiasters: Long? = null,
+        learnedPreferredType: TransactionType? = null
     ): ParseOutcome {
         val body = rawBody.trim()
         if (body.isBlank()) {
@@ -38,7 +40,7 @@ class FinancialMessageParser(
         val lower = normalizedBody.lowercase()
 
         // 1. Strict OTP / Verification / Security code filtering (NEVER store or treat as financial)
-        if (isOtpOrSecurityMessage(lower)) {
+        if (Companion.isOtpOrSecurityMessage(lower)) {
             return ParseOutcome.IgnoredOtpOrSecurity("OTP / Security verification message")
         }
 
@@ -74,23 +76,45 @@ class FinancialMessageParser(
             )
         }
 
+        val finalAmount = extracted.amountPiasters ?: 0L
+        val directionAssessment = RegexSmsExtractor.classifyDirectionAndKind(
+            normalizedBody = normalizedBody,
+            balanceAfterPiasters = extracted.balanceAfterPiasters,
+            knownAccountBalancePiasters = knownAccountBalancePiasters,
+            hasTransactionAmount = finalAmount > 0L,
+            learnedPreferredType = learnedPreferredType
+        )
+
+        // Re-check pure balance inquiry after full contextual direction analysis
+        if (directionAssessment.direction == MessageDirection.BALANCE_ONLY && finalAmount <= 0L) {
+            return ParseOutcome.BalanceInquiryOnly(
+                sourceName = extracted.bankOrProviderName,
+                balancePiasters = extracted.balanceAfterPiasters ?: extracted.amountPiasters
+            )
+        }
+
         // 4. Reject marketing promo messages that have no clear transaction kind
-        if (isMarketingPromo(lower) && extracted.operationKind == null) {
+        val resolvedOpKind = when {
+            directionAssessment.direction != MessageDirection.UNKNOWN -> directionAssessment.operationKind
+            extracted.operationKind != null -> extracted.operationKind
+            else -> null
+        }
+        if (isMarketingPromo(lower) && resolvedOpKind == null) {
             return ParseOutcome.IgnoredNonFinancial("Promotional or marketing message")
         }
 
-        if (extracted.operationKind == null && extracted.amountPiasters == null) {
+        if (resolvedOpKind == null && extracted.amountPiasters == null) {
             return ParseOutcome.IgnoredNonFinancial("No financial transaction markers found")
         }
 
-        val finalKind = extracted.operationKind ?: MessageOperationKind.CARD_PURCHASE
+        val finalKind = resolvedOpKind ?: MessageOperationKind.CARD_PURCHASE
         val mappedType = mapKindToTransactionType(finalKind)
-        val finalAmount = extracted.amountPiasters ?: 0L
 
         // Confidence scoring
         var confidence = 0.30f + extracted.confidenceBoost
         if (finalAmount > 0L) confidence += 0.25f
-        if (extracted.operationKind != null) confidence += 0.10f
+        if (resolvedOpKind != null) confidence += 0.12f
+        if (directionAssessment.confidence >= 0.80f) confidence += 0.08f
         if (!extracted.referenceNumber.isNullOrBlank()) confidence += 0.10f
         confidence = confidence.coerceIn(0.1f, 1.0f)
 
@@ -133,8 +157,11 @@ class FinancialMessageParser(
             feeDedupFingerprint = feeFingerprint,
             defaultAccountHint = extracted.defaultAccountHint,
             extractedSummary = summary,
-            isIncomplete = (finalAmount <= 0L || extracted.operationKind == null),
-            matchedStrategyId = selectedStrategy?.strategyId ?: "generic"
+            isIncomplete = (finalAmount <= 0L || resolvedOpKind == null),
+            matchedStrategyId = selectedStrategy?.strategyId ?: "generic",
+            direction = directionAssessment.direction,
+            directionReasonAr = directionAssessment.reasonAr,
+            directionReasonEn = directionAssessment.reasonEn
         )
 
         return if (parsed.isIncomplete) {
@@ -145,15 +172,8 @@ class FinancialMessageParser(
         }
     }
 
-    private fun isOtpOrSecurityMessage(lower: String): Boolean {
-        val otpTerms = listOf(
-            "otp", "verification code", "one-time password", "one time password",
-            "passcode", "do not share", "security code", "auth code",
-            "رمز التحقق", "كود التحقق", "كود التفعيل", "رمز التفعيل",
-            "الرقم السري المتغير", "لا تشارك", "كود التأكيد", "رمز التأكيد", "رقم سري"
-        )
-        return otpTerms.any { lower.contains(it) }
-    }
+    private fun isOtpOrSecurityMessage(lower: String): Boolean =
+        Companion.isOtpOrSecurityMessage(lower)
 
     private fun isMarketingPromo(lower: String): Boolean {
         val promoTerms = listOf(
@@ -247,6 +267,31 @@ class FinancialMessageParser(
     }
 
     companion object {
+        private val otpTerms = listOf(
+            "otp", "verification code", "one-time password", "one time password",
+            "passcode", "do not share", "security code", "auth code",
+            "رمز التحقق", "كود التحقق", "كود التفعيل", "رمز التفعيل",
+            "الرقم السري المتغير", "لا تشارك", "كود التأكيد", "رمز التأكيد", "رقم سري"
+        )
+
+        fun isOtpOrSecurityMessage(rawOrLower: String): Boolean {
+            val lower = rawOrLower.lowercase()
+            return otpTerms.any { lower.contains(it) }
+        }
+
+        private val financialCurrencyOrCueRegex = Regex(
+            """(ج\.م|جنيه|egp|usd|sar|eur|instapay|انستاباي|فودافون\s*كاش|vodafone\s*cash|تم خصم|تم استلام|تم تحويل|تم إيداع|تم سحب|عملية شراء|debited|credited|withdrawn|transferred|purchase)""",
+            RegexOption.IGNORE_CASE
+        )
+
+        fun looksLikeFinancialNotification(sender: String, body: String): Boolean {
+            val combined = "$sender $body".trim()
+            if (combined.length < 10) return false
+            if (isOtpOrSecurityMessage(combined)) return false
+            val hasDigit = combined.any { it.isDigit() || it in '٠'..'٩' }
+            return hasDigit && financialCurrencyOrCueRegex.containsMatchIn(combined)
+        }
+
         fun defaultStrategies(registry: ParsingRulesRegistry = ParsingRulesRegistry()): List<SmsParsingStrategy> = listOf(
             InstaPaySmsStrategy(),
             EgyptianWalletSmsStrategy(),

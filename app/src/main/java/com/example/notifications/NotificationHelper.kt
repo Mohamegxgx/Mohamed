@@ -177,7 +177,10 @@ object NotificationHelper {
         notificationId: Int,
         pendingCount: Int,
         latestSummary: String,
-        lang: AppLanguage = AppLanguage.AR
+        lang: AppLanguage = AppLanguage.AR,
+        pendingId: Long? = null,
+        accountId: Long? = null,
+        directionLabel: String = ""
     ) {
         if (!hasNotificationPermission(context)) return
         ensureChannels(context)
@@ -194,22 +197,48 @@ object NotificationHelper {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val title = if (lang == AppLanguage.AR) {
-            "القارئ الذكي: $pendingCount عملية للمراجعة"
-        } else {
-            "Smart Reader: $pendingCount pending review"
+        val title = when {
+            directionLabel.isNotBlank() && pendingCount == 1 -> if (lang == AppLanguage.AR) {
+                "القارئ الذكي • $directionLabel"
+            } else {
+                "Smart Reader • $directionLabel"
+            }
+            lang == AppLanguage.AR -> "القارئ الذكي: $pendingCount عملية للمراجعة"
+            else -> "Smart Reader: $pendingCount pending review"
         }
         val body = latestSummary.ifBlank {
             if (lang == AppLanguage.AR) "تم رصد معاملات مالية جديدة بانتظار اعتمادك." else "New financial alerts waiting for approval."
         }
 
-        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+        val builder = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher_round)
             .setContentTitle(title)
             .setContentText(body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setContentIntent(reviewPi)
+
+        if (pendingId != null && pendingId > 0L) {
+            val approveIntent = Intent(context, NotificationActionReceiver::class.java).apply {
+                action = NotificationActionReceiver.ACTION_APPROVE_PENDING
+                putExtra(NotificationActionReceiver.EXTRA_NOTIFICATION_ID, notificationId)
+                putExtra(NotificationActionReceiver.EXTRA_PENDING_ID, pendingId)
+                putExtra(NotificationActionReceiver.EXTRA_ACCOUNT_ID, accountId ?: -1L)
+            }
+            val approvePi = PendingIntent.getBroadcast(
+                context,
+                notificationId + 35_000,
+                approveIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            builder.addAction(
+                0,
+                if (lang == AppLanguage.AR) "اعتماد فوري" else "Approve Now",
+                approvePi
+            )
+        }
+
+        val notification = builder
             .addAction(
                 0,
                 if (lang == AppLanguage.AR) "مراجعة الآن" else "Review Now",
@@ -217,12 +246,41 @@ object NotificationHelper {
             )
             .addAction(
                 0,
-                if (lang == AppLanguage.AR) "تحديد كمقروء" else "Mark Read",
+                if (lang == AppLanguage.AR) "تجاهل" else "Dismiss",
                 dismissPi
             )
             .setAutoCancel(true)
             .build()
 
+        runCatching {
+            NotificationManagerCompat.from(context).notify(notificationId, notification)
+        }
+    }
+
+    fun showSmartReaderAutoRecordedNotification(
+        context: Context,
+        notificationId: Int,
+        summaryText: String,
+        directionLabel: String,
+        lang: AppLanguage = AppLanguage.AR
+    ) {
+        if (!hasNotificationPermission(context)) return
+        ensureChannels(context)
+        val openPi = createDeepLinkPendingIntent(context, notificationId, DEST_SMART_READER)
+        val title = if (lang == AppLanguage.AR) {
+            "تم التسجيل تلقائياً • $directionLabel"
+        } else {
+            "Auto-Recorded • $directionLabel"
+        }
+        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+            .setSmallIcon(R.mipmap.ic_launcher_round)
+            .setContentTitle(title)
+            .setContentText(summaryText)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(summaryText))
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setContentIntent(openPi)
+            .setAutoCancel(true)
+            .build()
         runCatching {
             NotificationManagerCompat.from(context).notify(notificationId, notification)
         }

@@ -1,12 +1,17 @@
 package com.example
 
 import android.content.Context
+import androidx.activity.ComponentActivity
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.example.data.backup.BackupAndExportManager
@@ -31,6 +36,8 @@ import com.example.domain.model.TransactionSource
 import com.example.domain.model.TransactionType
 import com.example.reader.IncomingRawMessage
 import com.example.reader.SmartReaderProcessor
+import com.example.ui.theme.ElbagorryMoneyTheme
+import com.example.ui.viewmodel.MainViewModel
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -47,7 +54,7 @@ import org.robolectric.annotation.Config
 class ExampleRobolectricTest {
 
     @get:Rule
-    val composeTestRule = createAndroidComposeRule<MainActivity>()
+    val composeTestRule = createAndroidComposeRule<ComponentActivity>()
 
     private lateinit var db: AppDatabase
     private lateinit var repo: MoneyRepository
@@ -260,7 +267,29 @@ class ExampleRobolectricTest {
 
     @Test
     fun `compose ui navigates tabs opens quick add sheet smart reader and categories`() {
-        composeTestRule.waitForIdle()
+        val app = ApplicationProvider.getApplicationContext<ElbagorryMoneyApp>()
+        composeTestRule.setContent {
+            val vm = remember {
+                MainViewModel(
+                    repository = app.repository,
+                    prefsRepo = app.preferencesRepository,
+                    backupManager = app.backupManager,
+                    smartReaderProcessor = app.smartReaderProcessor,
+                    appContext = app
+                )
+            }
+            val uiState by vm.uiState.collectAsStateWithLifecycle()
+            ElbagorryMoneyTheme(
+                themeMode = uiState.preferences.themeMode,
+                themePreset = uiState.preferences.themePreset,
+                language = uiState.preferences.language
+            ) {
+                ElbagorryMoneyRoot(viewModel = vm)
+            }
+        }
+        composeTestRule.waitUntil(5_000L) {
+            composeTestRule.onAllNodesWithTag("privacy_toggle_button").fetchSemanticsNodes().isNotEmpty()
+        }
         composeTestRule.onNodeWithTag("privacy_toggle_button").assertIsDisplayed().performClick()
         composeTestRule.waitForIdle()
 

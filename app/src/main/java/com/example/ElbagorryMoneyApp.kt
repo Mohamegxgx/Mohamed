@@ -10,6 +10,7 @@ import com.example.notifications.NotificationHelper
 import com.example.reader.SmartReaderProcessor
 import com.example.security.AppSecurityHelper
 import com.example.widget.ElbagorryWidgetUpdater
+import com.google.firebase.FirebaseApp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -27,6 +28,9 @@ class ElbagorryMoneyApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        if (FirebaseApp.getApps(this).isEmpty()) {
+            runCatching { FirebaseApp.initializeApp(this) }
+        }
         NotificationHelper.ensureChannels(this)
         AppSecurityHelper.ensureKeystoreKeyExists()
         FinancialCheckWorker.schedulePeriodic(this)

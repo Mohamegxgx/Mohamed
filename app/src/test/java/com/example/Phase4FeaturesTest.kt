@@ -2,6 +2,9 @@ package com.example
 
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
+import androidx.activity.ComponentActivity
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.hasScrollAction
@@ -11,8 +14,10 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.room.Room
 import androidx.sqlite.db.SupportSQLiteDatabase
 import androidx.sqlite.db.framework.FrameworkSQLiteOpenHelperFactory
@@ -36,6 +41,8 @@ import com.example.domain.model.TimeFilter
 import com.example.domain.model.TransactionType
 import com.example.reader.IncomingRawMessage
 import com.example.reader.SmartReaderProcessor
+import com.example.ui.theme.ElbagorryMoneyTheme
+import com.example.ui.viewmodel.MainViewModel
 import com.example.widget.computeWidgetSnapshot
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -52,7 +59,31 @@ import org.robolectric.annotation.Config
 class Phase4FeaturesTest {
 
     @get:Rule
-    val composeTestRule = createAndroidComposeRule<MainActivity>()
+    val composeTestRule = createAndroidComposeRule<ComponentActivity>()
+
+    private fun setMainAppContent() {
+        val app = ApplicationProvider.getApplicationContext<ElbagorryMoneyApp>()
+        runBlocking { app.repository.ensureSeeded() }
+        composeTestRule.setContent {
+            val vm = remember {
+                MainViewModel(
+                    repository = app.repository,
+                    prefsRepo = app.preferencesRepository,
+                    backupManager = app.backupManager,
+                    smartReaderProcessor = app.smartReaderProcessor,
+                    appContext = app
+                )
+            }
+            val uiState by vm.uiState.collectAsStateWithLifecycle()
+            ElbagorryMoneyTheme(
+                themeMode = uiState.preferences.themeMode,
+                themePreset = uiState.preferences.themePreset,
+                language = uiState.preferences.language
+            ) {
+                ElbagorryMoneyRoot(viewModel = vm)
+            }
+        }
+    }
 
     @Test
     fun `currencyConverter converts across EGP USD SAR EUR accurately`() {
@@ -275,27 +306,34 @@ class Phase4FeaturesTest {
 
     @Test
     fun `settings toggles privacy screen guard and switches primary currency`() {
+        setMainAppContent()
         composeTestRule.waitUntil(5_000L) {
             composeTestRule.onAllNodesWithTag("nav_settings_btn").fetchSemanticsNodes().isNotEmpty()
         }
         composeTestRule.onNodeWithTag("nav_settings_btn").performClick()
 
         composeTestRule.waitUntil(5_000L) {
+            composeTestRule.onAllNodesWithTag("settings_lazy_list").fetchSemanticsNodes().isNotEmpty()
+        }
+        composeTestRule.onNodeWithTag("settings_lazy_list").performScrollToNode(hasTestTag("currency_selector_row"))
+        composeTestRule.onNodeWithTag("currency_selector_row").performScrollToNode(hasTestTag("primary_currency_usd"))
+        composeTestRule.waitUntil(5_000L) {
             composeTestRule.onAllNodesWithTag("primary_currency_usd").fetchSemanticsNodes().isNotEmpty()
         }
-        composeTestRule.onNodeWithTag("primary_currency_usd").performClick()
+        composeTestRule.onNodeWithTag("primary_currency_usd").performScrollTo().performClick()
         composeTestRule.waitUntil(5_000L) {
             composeTestRule.onAllNodes(hasTestTag("primary_currency_usd") and isSelected())
                 .fetchSemanticsNodes().isNotEmpty()
         }
         composeTestRule.onNodeWithTag("primary_currency_usd").assertIsSelected()
 
-        composeTestRule.onNode(hasScrollAction()).performScrollToNode(hasTestTag("privacy_screen_guard_switch"))
+        composeTestRule.onNodeWithTag("settings_lazy_list").performScrollToNode(hasTestTag("privacy_screen_guard_switch"))
         composeTestRule.onNodeWithTag("privacy_screen_guard_switch").assertIsDisplayed()
     }
 
     @Test
     fun `quick add smart phrase parses phrase and saves transaction`() {
+        setMainAppContent()
         composeTestRule.waitUntil(5_000L) {
             composeTestRule.onAllNodesWithTag("fab_quick_add").fetchSemanticsNodes().isNotEmpty()
         }
@@ -304,11 +342,11 @@ class Phase4FeaturesTest {
         composeTestRule.waitUntil(5_000L) {
             composeTestRule.onAllNodesWithTag("toggle_smart_phrase_btn").fetchSemanticsNodes().isNotEmpty()
         }
-        composeTestRule.onNodeWithTag("toggle_smart_phrase_btn").performClick()
-        composeTestRule.onNodeWithTag("smart_phrase_input").performTextInput("صرفت 145 جنيه قهوة")
-        composeTestRule.onNodeWithTag("apply_smart_phrase_btn").performClick()
+        composeTestRule.onNodeWithTag("toggle_smart_phrase_btn").performScrollTo().performClick()
+        composeTestRule.onNodeWithTag("smart_phrase_input").performScrollTo().performTextInput("صرفت 145 جنيه قهوة")
+        composeTestRule.onNodeWithTag("apply_smart_phrase_btn").performScrollTo().performClick()
 
-        composeTestRule.onNodeWithTag("save_transaction_button").performClick()
+        composeTestRule.onNodeWithTag("save_transaction_button").performScrollTo().performClick()
         composeTestRule.waitUntil(5_000L) {
             composeTestRule.onAllNodesWithTag("save_transaction_button").fetchSemanticsNodes().isEmpty()
         }
@@ -316,6 +354,7 @@ class Phase4FeaturesTest {
 
     @Test
     fun `insights navigates to receipts vault screen`() {
+        setMainAppContent()
         composeTestRule.waitUntil(5_000L) {
             composeTestRule.onAllNodesWithTag("nav_tab_insights").fetchSemanticsNodes().isNotEmpty()
         }

@@ -59,6 +59,36 @@ class NotificationActionReceiver : BroadcastReceiver() {
                     }
                 }
             }
+            ACTION_APPROVE_PENDING -> {
+                val pendingId = intent.getLongExtra(EXTRA_PENDING_ID, -1L)
+                val accountId = intent.getLongExtra(EXTRA_ACCOUNT_ID, -1L)
+                if (pendingId <= 0L) {
+                    cancelSystemNotification(context, notifId)
+                    return
+                }
+                val pendingResult: PendingResult? = goAsync()
+                CoroutineScope(Dispatchers.IO).launch {
+                    try {
+                        val db = AppDatabase.getInstance(context.applicationContext)
+                        val repo = MoneyRepository(db)
+                        val resolvedAccountId = if (accountId > 0L) {
+                            accountId
+                        } else {
+                            repo.getAllAccountsOnce().firstOrNull { !it.isArchived }?.id ?: 1L
+                        }
+                        runCatching {
+                            repo.approvePendingTransaction(
+                                pendingId = pendingId,
+                                accountId = resolvedAccountId
+                            )
+                            ElbagorryWidgetUpdater.updateAll(context.applicationContext)
+                        }
+                    } finally {
+                        cancelSystemNotification(context, notifId)
+                        pendingResult?.finish()
+                    }
+                }
+            }
             ACTION_DISMISS -> {
                 val pendingResult: PendingResult? = goAsync()
                 CoroutineScope(Dispatchers.IO).launch {
@@ -82,10 +112,12 @@ class NotificationActionReceiver : BroadcastReceiver() {
 
     companion object {
         const val ACTION_PAY_INSTALLMENT = "com.example.notifications.ACTION_PAY_INSTALLMENT"
+        const val ACTION_APPROVE_PENDING = "com.example.notifications.ACTION_APPROVE_PENDING"
         const val ACTION_DISMISS = "com.example.notifications.ACTION_DISMISS"
         const val EXTRA_NOTIFICATION_ID = "extra_notification_id"
         const val EXTRA_DB_NOTIFICATION_ID = "extra_db_notification_id"
         const val EXTRA_INSTALLMENT_ID = "extra_installment_id"
+        const val EXTRA_PENDING_ID = "extra_pending_id"
         const val EXTRA_ACCOUNT_ID = "extra_account_id"
     }
 }

@@ -19,7 +19,7 @@ private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(na
 
 data class UserPreferences(
     val themeMode: ThemeMode = ThemeMode.DARK,
-    val themePreset: ThemePreset = ThemePreset.EMERALD_OBSIDIAN,
+    val themePreset: ThemePreset = ThemePreset.HYDROGEN_NEXUS,
     val language: AppLanguage = AppLanguage.AR,
     val hideAmounts: Boolean = false,
     val biometricLockEnabled: Boolean = false,
@@ -35,9 +35,13 @@ data class UserPreferences(
     val summaryFrequency: SummaryFrequency = SummaryFrequency.DAILY,
     val lastSummaryTimestampMillis: Long = 0L,
     val smartReaderEnabled: Boolean = true,
+    val smartReaderAutoApprove: Boolean = false,
     val readerIgnoreOtp: Boolean = true,
     val readerIgnoreBalanceInquiries: Boolean = true,
-    val lastImportTimestampMillis: Long = 0L
+    val lastImportTimestampMillis: Long = 0L,
+    val isGuestMode: Boolean = false,
+    val customCurrencyRatesRaw: String = "",
+    val autoCloudSyncEnabled: Boolean = true
 )
 
 class UserPreferencesRepository(private val context: Context) {
@@ -60,15 +64,19 @@ class UserPreferencesRepository(private val context: Context) {
         val SUMMARY_FREQUENCY = stringPreferencesKey("summary_frequency")
         val LAST_SUMMARY_TS = longPreferencesKey("last_summary_ts")
         val SMART_READER_ENABLED = booleanPreferencesKey("smart_reader_enabled")
+        val SMART_READER_AUTO_APPROVE = booleanPreferencesKey("smart_reader_auto_approve")
         val READER_IGNORE_OTP = booleanPreferencesKey("reader_ignore_otp")
         val READER_IGNORE_BALANCE = booleanPreferencesKey("reader_ignore_balance")
         val LAST_IMPORT_TS = longPreferencesKey("last_import_ts")
+        val IS_GUEST_MODE = booleanPreferencesKey("is_guest_mode")
+        val CUSTOM_CURRENCY_RATES = stringPreferencesKey("custom_currency_rates")
+        val AUTO_CLOUD_SYNC = booleanPreferencesKey("auto_cloud_sync")
     }
 
     val preferences: Flow<UserPreferences> = context.dataStore.data.map { prefs ->
         UserPreferences(
             themeMode = prefs[Keys.THEME_MODE]?.let { runCatching { ThemeMode.valueOf(it) }.getOrNull() } ?: ThemeMode.DARK,
-            themePreset = prefs[Keys.THEME_PRESET]?.let { runCatching { ThemePreset.valueOf(it) }.getOrNull() } ?: ThemePreset.EMERALD_OBSIDIAN,
+            themePreset = prefs[Keys.THEME_PRESET]?.let { runCatching { ThemePreset.valueOf(it) }.getOrNull() } ?: ThemePreset.HYDROGEN_NEXUS,
             language = prefs[Keys.LANGUAGE]?.let { runCatching { AppLanguage.valueOf(it) }.getOrNull() } ?: AppLanguage.AR,
             hideAmounts = prefs[Keys.HIDE_AMOUNTS] ?: false,
             biometricLockEnabled = prefs[Keys.BIOMETRIC_LOCK] ?: false,
@@ -84,9 +92,13 @@ class UserPreferencesRepository(private val context: Context) {
             summaryFrequency = prefs[Keys.SUMMARY_FREQUENCY]?.let { runCatching { SummaryFrequency.valueOf(it) }.getOrNull() } ?: SummaryFrequency.DAILY,
             lastSummaryTimestampMillis = prefs[Keys.LAST_SUMMARY_TS] ?: 0L,
             smartReaderEnabled = prefs[Keys.SMART_READER_ENABLED] ?: true,
+            smartReaderAutoApprove = prefs[Keys.SMART_READER_AUTO_APPROVE] ?: false,
             readerIgnoreOtp = prefs[Keys.READER_IGNORE_OTP] ?: true,
             readerIgnoreBalanceInquiries = prefs[Keys.READER_IGNORE_BALANCE] ?: true,
-            lastImportTimestampMillis = prefs[Keys.LAST_IMPORT_TS] ?: 0L
+            lastImportTimestampMillis = prefs[Keys.LAST_IMPORT_TS] ?: 0L,
+            isGuestMode = prefs[Keys.IS_GUEST_MODE] ?: false,
+            customCurrencyRatesRaw = prefs[Keys.CUSTOM_CURRENCY_RATES] ?: "",
+            autoCloudSyncEnabled = prefs[Keys.AUTO_CLOUD_SYNC] ?: true
         )
     }
 
@@ -124,8 +136,16 @@ class UserPreferencesRepository(private val context: Context) {
         context.dataStore.edit { it[Keys.CURRENCY_CODE] = code.uppercase() }
     }
 
+    suspend fun setCustomCurrencyRates(raw: String) {
+        context.dataStore.edit { it[Keys.CUSTOM_CURRENCY_RATES] = raw.trim() }
+    }
+
     suspend fun setSmartReaderEnabled(enabled: Boolean) {
         context.dataStore.edit { it[Keys.SMART_READER_ENABLED] = enabled }
+    }
+
+    suspend fun setSmartReaderAutoApprove(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.SMART_READER_AUTO_APPROVE] = enabled }
     }
 
     suspend fun setReaderIgnoreOtp(enabled: Boolean) {
@@ -138,6 +158,14 @@ class UserPreferencesRepository(private val context: Context) {
 
     suspend fun setLastImportTimestamp(timestampMillis: Long) {
         context.dataStore.edit { it[Keys.LAST_IMPORT_TS] = timestampMillis }
+    }
+
+    suspend fun setGuestMode(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.IS_GUEST_MODE] = enabled }
+    }
+
+    suspend fun setAutoCloudSyncEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.AUTO_CLOUD_SYNC] = enabled }
     }
 
     suspend fun setSummaryFrequency(frequency: SummaryFrequency) {

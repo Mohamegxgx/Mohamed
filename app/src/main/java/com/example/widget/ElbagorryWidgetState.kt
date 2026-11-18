@@ -36,7 +36,7 @@ data class WidgetSnapshot(
     val currency: String = "EGP",
     val hideAmounts: Boolean = false,
     val language: AppLanguage = AppLanguage.AR,
-    val themePreset: ThemePreset = ThemePreset.EMERALD_OBSIDIAN,
+    val themePreset: ThemePreset = ThemePreset.HYDROGEN_NEXUS,
     val hasData: Boolean = false
 )
 
@@ -102,7 +102,7 @@ fun computeWidgetSnapshot(
 
 fun Preferences.toWidgetSnapshot(): WidgetSnapshot {
     val lang = this[WidgetStateKeys.LANGUAGE]?.let { runCatching { AppLanguage.valueOf(it) }.getOrNull() } ?: AppLanguage.AR
-    val preset = this[WidgetStateKeys.THEME_PRESET]?.let { runCatching { ThemePreset.valueOf(it) }.getOrNull() } ?: ThemePreset.EMERALD_OBSIDIAN
+    val preset = this[WidgetStateKeys.THEME_PRESET]?.let { runCatching { ThemePreset.valueOf(it) }.getOrNull() } ?: ThemePreset.HYDROGEN_NEXUS
     return WidgetSnapshot(
         netBalancePiasters = this[WidgetStateKeys.NET_BALANCE] ?: 0L,
         todayExpensePiasters = this[WidgetStateKeys.TODAY_EXPENSE] ?: 0L,

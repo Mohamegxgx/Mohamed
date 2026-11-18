@@ -7,6 +7,9 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Update
 import com.example.data.local.entity.AccountEntity
+import com.example.data.local.entity.AiChatMessageEntity
+import com.example.data.local.entity.AiChatSessionEntity
+import com.example.data.local.entity.BnplProgramEntity
 import com.example.data.local.entity.BudgetEntity
 import com.example.data.local.entity.CategoryEntity
 import com.example.data.local.entity.DebtEntity
@@ -191,6 +194,9 @@ interface InstallmentDao {
 
     @Delete
     suspend fun delete(installment: InstallmentEntity)
+
+    @Query("UPDATE installments SET bnplProgramId = NULL WHERE bnplProgramId = :programId")
+    suspend fun detachProgram(programId: Long)
 
     @Query("DELETE FROM installments")
     suspend fun deleteAll()
@@ -411,3 +417,107 @@ interface MerchantRuleDao {
     @Query("DELETE FROM merchant_rules")
     suspend fun deleteAll()
 }
+
+@Dao
+interface BnplProgramDao {
+    @Query("SELECT * FROM bnpl_programs ORDER BY id ASC")
+    fun observeAll(): Flow<List<BnplProgramEntity>>
+
+    @Query("SELECT * FROM bnpl_programs ORDER BY id ASC")
+    suspend fun getAllOnce(): List<BnplProgramEntity>
+
+    @Query("SELECT * FROM bnpl_programs WHERE id = :id LIMIT 1")
+    suspend fun getById(id: Long): BnplProgramEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(program: BnplProgramEntity): Long
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertAllIgnore(programs: List<BnplProgramEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(programs: List<BnplProgramEntity>)
+
+    @Update
+    suspend fun update(program: BnplProgramEntity)
+
+    @Delete
+    suspend fun delete(program: BnplProgramEntity)
+
+    @Query("DELETE FROM bnpl_programs")
+    suspend fun deleteAll()
+}
+
+@Dao
+interface AiChatDao {
+    @Query("SELECT * FROM ai_chat_sessions ORDER BY updatedAtMillis DESC")
+    fun observeAllSessions(): Flow<List<AiChatSessionEntity>>
+
+    @Query("SELECT * FROM ai_chat_sessions ORDER BY updatedAtMillis DESC")
+    suspend fun getAllSessionsOnce(): List<AiChatSessionEntity>
+
+    @Query("SELECT * FROM ai_chat_sessions WHERE id = :id LIMIT 1")
+    suspend fun getSessionById(id: String): AiChatSessionEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertSession(session: AiChatSessionEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertSessions(sessions: List<AiChatSessionEntity>)
+
+    @Query("UPDATE ai_chat_sessions SET syncedToCloud = :synced WHERE id = :sessionId")
+    suspend fun markSessionSynced(sessionId: String, synced: Boolean)
+
+    @Query("DELETE FROM ai_chat_sessions WHERE id = :id")
+    suspend fun deleteSessionById(id: String)
+
+    @Query("SELECT * FROM ai_chat_messages WHERE sessionId = :sessionId ORDER BY timestampMillis ASC")
+    fun observeMessagesForSession(sessionId: String): Flow<List<AiChatMessageEntity>>
+
+    @Query("SELECT * FROM ai_chat_messages WHERE sessionId = :sessionId ORDER BY timestampMillis ASC")
+    suspend fun getMessagesForSessionOnce(sessionId: String): List<AiChatMessageEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertMessage(message: AiChatMessageEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertMessages(messages: List<AiChatMessageEntity>)
+
+    @Query("UPDATE ai_chat_messages SET isUndone = :isUndone WHERE id = :messageId")
+    suspend fun updateMessageUndone(messageId: String, isUndone: Boolean)
+
+    @Query("DELETE FROM ai_chat_messages WHERE sessionId = :sessionId")
+    suspend fun deleteMessagesForSession(sessionId: String)
+}
+
+@Dao
+interface SavingsCertificateDao {
+    @Query("SELECT * FROM savings_certificates ORDER BY createdAt DESC, id DESC")
+    fun observeAll(): Flow<List<com.example.data.local.entity.SavingsCertificateEntity>>
+
+    @Query("SELECT * FROM savings_certificates ORDER BY createdAt DESC, id DESC")
+    suspend fun getAllOnce(): List<com.example.data.local.entity.SavingsCertificateEntity>
+
+    @Query("SELECT * FROM savings_certificates WHERE id = :id LIMIT 1")
+    suspend fun getById(id: Long): com.example.data.local.entity.SavingsCertificateEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(cert: com.example.data.local.entity.SavingsCertificateEntity): Long
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(certs: List<com.example.data.local.entity.SavingsCertificateEntity>)
+
+    @Update
+    suspend fun update(cert: com.example.data.local.entity.SavingsCertificateEntity)
+
+    @Delete
+    suspend fun delete(cert: com.example.data.local.entity.SavingsCertificateEntity)
+
+    @Query("UPDATE savings_certificates SET pricePerGramPiasters = :pricePerGramPiasters WHERE assetKind = 'GOLD_RESERVE' AND karat = :karat")
+    suspend fun updateGoldPriceForKarat(karat: Int, pricePerGramPiasters: Long)
+
+    @Query("DELETE FROM savings_certificates")
+    suspend fun deleteAll()
+}
+
+

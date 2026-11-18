@@ -101,6 +101,16 @@ private data class WidgetPalette(
 )
 
 private fun widgetPaletteFor(preset: ThemePreset): WidgetPalette = when (preset) {
+    ThemePreset.HYDROGEN_NEXUS -> WidgetPalette(
+        bgColor = Color(0xFF050816),
+        surfaceColor = Color(0xFF101A36),
+        primaryColor = Color(0xFF4F8CFF),
+        onPrimaryColor = Color(0xFFFFFFFF),
+        accentColor = Color(0xFF38BDF8),
+        expenseColor = Color(0xFFF87171),
+        textPrimary = Color(0xFFF8FAFC),
+        textSecondary = Color(0xFF94A3B8)
+    )
     ThemePreset.EMERALD_OBSIDIAN -> WidgetPalette(
         bgColor = Color(0xFF0A141E),
         surfaceColor = Color(0xFF142232),
@@ -136,7 +146,7 @@ private fun widgetPaletteFor(preset: ThemePreset): WidgetPalette = when (preset)
         surfaceColor = Color(0xFF261D14),
         primaryColor = Color(0xFFF59E0B),
         onPrimaryColor = Color(0xFF291800),
-        accentColor = Color(0xFF34D399),
+        accentColor = Color(0xFF38BDF8),
         expenseColor = Color(0xFFFB7185),
         textPrimary = Color(0xFFFAF6F0),
         textSecondary = Color(0xFFB8A99A)

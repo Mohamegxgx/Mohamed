@@ -203,6 +203,26 @@ object FinancialEngine {
             val limit = CurrencyConverter.convertPiasters(budget.limitPiasters, "EGP", targetCurrency)
             val remaining = limit - spent
             val usagePercent = computePercent(spent, limit)
+
+            val (elapsedDays, totalDays, remainingDays) = computePeriodDayMetrics(
+                range = range,
+                nowMillis = nowMillis,
+                isCustom = budget.isCustomPeriod
+            )
+            val dailyPace = if (spent > 0L) {
+                BigDecimal(spent).divide(BigDecimal(elapsedDays), 0, RoundingMode.HALF_UP).toLong()
+            } else 0L
+            val projectedEnd = dailyPace * totalDays.toLong()
+            val depletionDay = if (dailyPace > 0L && limit > 0L && projectedEnd > limit) {
+                val estDay = BigDecimal(limit).divide(BigDecimal(dailyPace), 0, RoundingMode.CEILING).toInt()
+                estDay.coerceIn(1, totalDays)
+            } else null
+            val recommendedCap = if (remaining > 0L && remainingDays > 0) {
+                BigDecimal(remaining).divide(BigDecimal(remainingDays), 0, RoundingMode.DOWN).toLong()
+            } else 0L
+            val isExceeded = spent > limit
+            val burnRateWarning = !isExceeded && limit > 0L && spent > 0L && projectedEnd > limit
+
             BudgetEvaluation(
                 budgetId = budget.id,
                 name = budget.name,
@@ -212,8 +232,34 @@ object FinancialEngine {
                 remainingPiasters = remaining,
                 usagePercent = usagePercent,
                 isWarning80 = usagePercent >= 80.0 && usagePercent < 100.0,
-                isExceeded = spent > limit
+                isExceeded = isExceeded,
+                dailySpendPacePiasters = dailyPace,
+                projectedMonthEndPiasters = projectedEnd,
+                estimatedDepletionDay = depletionDay,
+                recommendedDailyCapPiasters = recommendedCap,
+                burnRateWarning = burnRateWarning
             )
+        }
+    }
+
+    private fun computePeriodDayMetrics(
+        range: TimeRange,
+        nowMillis: Long,
+        isCustom: Boolean
+    ): Triple<Int, Int, Int> {
+        return if (!isCustom) {
+            val cal = Calendar.getInstance().apply { timeInMillis = nowMillis.coerceIn(range.startMillis, range.endMillis) }
+            val totalDays = cal.getActualMaximum(Calendar.DAY_OF_MONTH).coerceAtLeast(1)
+            val elapsed = cal.get(Calendar.DAY_OF_MONTH).coerceIn(1, totalDays)
+            val remaining = (totalDays - elapsed + 1).coerceAtLeast(1)
+            Triple(elapsed, totalDays, remaining)
+        } else {
+            val dayMs = 86_400_000L
+            val totalDays = (((range.endMillis - range.startMillis).coerceAtLeast(dayMs)) / dayMs).toInt().coerceAtLeast(1)
+            val clampedNow = nowMillis.coerceIn(range.startMillis, range.endMillis)
+            val elapsed = ((((clampedNow - range.startMillis) / dayMs) + 1L).toInt()).coerceIn(1, totalDays)
+            val remaining = (totalDays - elapsed + 1).coerceAtLeast(1)
+            Triple(elapsed, totalDays, remaining)
         }
     }
 

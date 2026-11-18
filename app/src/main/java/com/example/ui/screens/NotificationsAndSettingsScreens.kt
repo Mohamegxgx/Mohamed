@@ -29,35 +29,54 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.semantics.Role
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.Logout
+import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.CloudDone
+import androidx.compose.material.icons.rounded.CloudDownload
+import androidx.compose.material.icons.rounded.CloudUpload
 import androidx.compose.material.icons.rounded.CreditCard
 import androidx.compose.material.icons.rounded.DoneAll
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.NotificationsNone
 import androidx.compose.material.icons.rounded.Palette
+import androidx.compose.material.icons.rounded.PersonOutline
 import androidx.compose.material.icons.rounded.PieChart
 import androidx.compose.material.icons.rounded.Savings
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Summarize
 import androidx.compose.material.icons.rounded.Widgets
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.rounded.CurrencyExchange
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.ui.text.input.KeyboardType
+import java.math.BigDecimal
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -88,8 +107,12 @@ import com.example.ui.components.formatReadableDateTime
 import com.example.ui.theme.CoralExpense
 import com.example.ui.theme.GoldAccent
 import com.example.ui.theme.SkyCyan
+import com.example.data.remote.CloudTransaction
+import com.example.data.remote.UserProfile
 import com.example.ui.theme.ThemePalettes
 import com.example.ui.theme.ThemePresetSpec
+import com.example.ui.viewmodel.CloudSyncActionState
+import com.example.ui.viewmodel.CloudUiState
 import com.example.ui.viewmodel.MainUiState
 import com.example.widget.ElbagorryWidgetReceiver
 
@@ -194,11 +217,26 @@ fun SettingsScreen(
     onSetSummaryFrequency: (SummaryFrequency) -> Unit = {},
     onSendSummaryNow: () -> Unit = {},
     onSetPrimaryCurrency: (String) -> Unit = {},
-    onSetPrivacyScreenGuard: (Boolean) -> Unit = {}
+    onSetPrivacyScreenGuard: (Boolean) -> Unit = {},
+    cloudUserName: String? = null,
+    cloudUserEmail: String? = null,
+    cloudProfileState: CloudUiState<UserProfile?> = CloudUiState.Loading,
+    cloudTransactionsState: CloudUiState<List<CloudTransaction>> = CloudUiState.Loading,
+    cloudActionState: CloudSyncActionState = CloudSyncActionState(),
+    onSyncToCloud: () -> Unit = {},
+    onRestoreFromCloud: () -> Unit = {},
+    onSignOut: () -> Unit = {},
+    isGuestMode: Boolean = false,
+    onSignInFromGuest: () -> Unit = {},
+    onExitGuestMode: () -> Unit = {},
+    onSaveCustomFxRates: (String) -> Unit = {},
+    onResetCustomFxRates: () -> Unit = {},
+    onSetAutoCloudSyncEnabled: (Boolean) -> Unit = {}
 ) {
     val context = LocalContext.current
     val prefs = state.preferences
     val lang = prefs.language
+    var showFxDialog by remember { mutableStateOf(false) }
     var hasNotifPermission by remember { mutableStateOf(NotificationHelper.hasNotificationPermission(context)) }
     val notifPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
@@ -220,10 +258,223 @@ fun SettingsScreen(
         }
     ) { padding ->
         LazyColumn(
-            modifier = Modifier.fillMaxSize().padding(padding),
+            modifier = Modifier.fillMaxSize().padding(padding).testTag("settings_lazy_list"),
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
+            // Cloud Sync & Google Account (or Local Guest Mode Banner)
+            item {
+                if (isGuestMode) {
+                    FinancialCard(
+                        elevated = true,
+                        borderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.45f),
+                        modifier = Modifier.testTag("guest_mode_settings_card")
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(Icons.Rounded.PersonOutline, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                            Text(
+                                AppStrings.text("وضع الضيف (حفظ محلي فقط)", "Guest Mode (Local Storage Only)", lang),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            text = AppStrings.text(
+                                "بياناتك الحالية محفوظة محليًا على هذا الجهاز. سجل الدخول بحساب Google في أي وقت لرفع بياناتك ومزامنتها سحابيًا.",
+                                "Your data is currently stored locally on this device. Sign in with Google anytime to enable Cloud Sync.",
+                                lang
+                            ),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        Button(
+                            onClick = onSignInFromGuest,
+                            modifier = Modifier.fillMaxWidth().testTag("guest_sign_in_google_btn")
+                        ) {
+                            Icon(Icons.Rounded.CloudUpload, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text(AppStrings.text("ربط بحساب Google للمزامنة", "Sign in with Google to Sync", lang))
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedButton(
+                            onClick = onExitGuestMode,
+                            modifier = Modifier.fillMaxWidth().testTag("exit_guest_mode_btn")
+                        ) {
+                            Icon(Icons.AutoMirrored.Rounded.Logout, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text(AppStrings.text("العودة لشاشة تسجيل الدخول", "Return to Sign-In Screen", lang))
+                        }
+                    }
+                } else {
+                FinancialCard(elevated = true) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(Icons.Rounded.CloudDone, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Text(
+                            AppStrings.text("المزامنة السحابية وحساب Google", "Cloud Sync & Google Account", lang),
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                    }
+                    Spacer(Modifier.height(10.dp))
+
+                    val profileData = (cloudProfileState as? CloudUiState.Success)?.data
+                    val displayName = cloudUserName?.takeIf { it.isNotBlank() }
+                        ?: profileData?.displayName
+                        ?: AppStrings.text("مستخدم ELBAGORRY", "ELBAGORRY User", lang)
+                    val emailText = cloudUserEmail?.takeIf { it.isNotBlank() }
+                        ?: profileData?.email
+                        ?: AppStrings.text("متصل بالمزامنة السحابية الآمنة", "Connected to Firebase Cloud Sync", lang)
+
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.AccountCircle,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(36.dp)
+                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = displayName,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = emailText,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(10.dp))
+                    val cloudStatusText = when (cloudTransactionsState) {
+                        is CloudUiState.Loading -> AppStrings.text("جاري مزامنة الحالة السحابية...", "Checking cloud ledger...", lang)
+                        is CloudUiState.Success -> AppStrings.text(
+                            "المعاملات المحفوظة سحابيًا: ${cloudTransactionsState.data.size} معاملة",
+                            "Synced in cloud: ${cloudTransactionsState.data.size} transactions",
+                            lang
+                        )
+                        is CloudUiState.Error -> AppStrings.text(
+                            "حالة السحابة: ${cloudTransactionsState.message}",
+                            "Cloud status: ${cloudTransactionsState.message}",
+                            lang
+                        )
+                    }
+                    Text(
+                        text = cloudStatusText,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    profileData?.lastSyncedAtMillis?.let { syncedAt ->
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = AppStrings.text(
+                                "آخر مزامنة: ${formatReadableDateTime(syncedAt, lang)}",
+                                "Last synced: ${formatReadableDateTime(syncedAt, lang)}",
+                                lang
+                            ),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    AnimatedVisibility(visible = cloudActionState.statusMessage != null || cloudActionState.errorMessage != null) {
+                        val isError = cloudActionState.errorMessage != null
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (isError) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.primaryContainer,
+                            modifier = Modifier.fillMaxWidth().padding(top = 10.dp)
+                        ) {
+                            Text(
+                                text = cloudActionState.errorMessage ?: cloudActionState.statusMessage.orEmpty(),
+                                color = if (isError) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onPrimaryContainer,
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.padding(10.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.height(8.dp))
+                    SettingSwitchRow(
+                        title = AppStrings.text(
+                            "المزامنة السحابية التلقائية الشاملة (13 جدول)",
+                            "Automatic Full Cloud Sync (13 Collections)",
+                            lang
+                        ),
+                        checked = prefs.autoCloudSyncEnabled,
+                        enabled = true,
+                        onCheckedChange = onSetAutoCloudSyncEnabled,
+                        modifier = Modifier.testTag("auto_cloud_sync_switch")
+                    )
+
+                    Spacer(Modifier.height(10.dp))
+                    Button(
+                        onClick = onSyncToCloud,
+                        enabled = !cloudActionState.isSyncing,
+                        modifier = Modifier.fillMaxWidth().testTag("sync_to_cloud_btn")
+                    ) {
+                        if (cloudActionState.isSyncing) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                color = MaterialTheme.colorScheme.onPrimary,
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(Modifier.width(8.dp))
+                        } else {
+                            Icon(Icons.Rounded.CloudUpload, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                        }
+                        Text(AppStrings.text("رفع ومزامنة البيانات للسحابة", "Sync Local Data to Cloud", lang))
+                    }
+
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedButton(
+                        onClick = onRestoreFromCloud,
+                        enabled = !cloudActionState.isSyncing,
+                        modifier = Modifier.fillMaxWidth().testTag("restore_from_cloud_btn")
+                    ) {
+                        Icon(Icons.Rounded.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(AppStrings.text("استعادة البيانات من السحابة", "Restore Data from Cloud", lang))
+                    }
+
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedButton(
+                        onClick = onSignOut,
+                        enabled = !cloudActionState.isSyncing,
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.45f)),
+                        modifier = Modifier.fillMaxWidth().testTag("google_sign_out_btn")
+                    ) {
+                        Icon(Icons.AutoMirrored.Rounded.Logout, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(AppStrings.text("تسجيل الخروج من Google", "Sign Out of Google", lang))
+                    }
+                }
+                }
+            }
+
             // Appearance, Theme Presets & Language
             item {
                 FinancialCard {
@@ -273,13 +524,20 @@ fun SettingsScreen(
                                         modifier = Modifier.weight(1f)
                                     )
                                 }
+                                if (rowPresets.size == 1) {
+                                    Spacer(modifier = Modifier.weight(1f))
+                                }
                             }
                         }
                     }
+                }
+            }
 
-                    Spacer(Modifier.height(14.dp))
-                    Text(AppStrings.text("اللغة:", "Language:", lang), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(Modifier.height(6.dp))
+            // Language & Primary Currency
+            item {
+                FinancialCard {
+                    Text(AppStrings.text("اللغة:", "Language:", lang), style = MaterialTheme.typography.titleMedium)
+                    Spacer(Modifier.height(8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         FilterChip(
                             selected = prefs.language == AppLanguage.AR,
@@ -302,7 +560,10 @@ fun SettingsScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Spacer(Modifier.height(6.dp))
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    LazyRow(
+                        modifier = Modifier.fillMaxWidth().testTag("currency_selector_row"),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
                         items(CurrencyConverter.supportedCurrencies, key = { it.code }) { spec ->
                             FilterChip(
                                 selected = prefs.currencyCode == spec.code,
@@ -311,6 +572,27 @@ fun SettingsScreen(
                                 modifier = Modifier.testTag("primary_currency_${spec.code.lowercase()}")
                             )
                         }
+                    }
+
+                    Spacer(Modifier.height(10.dp))
+                    val effectiveSpecs = remember(prefs.customCurrencyRatesRaw) {
+                        CurrencyConverter.allSpecsWithEffectiveRates().filter { it.code != "EGP" }
+                    }
+                    Text(
+                        text = effectiveSpecs.take(3).joinToString(" • ") {
+                            "1 ${it.code} = ${it.rateToEgp.stripTrailingZeros().toPlainString()} EGP"
+                        },
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedButton(
+                        onClick = { showFxDialog = true },
+                        modifier = Modifier.fillMaxWidth().testTag("edit_fx_rates_btn")
+                    ) {
+                        Icon(Icons.Rounded.CurrencyExchange, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(AppStrings.text("تعديل أسعار الصرف المخصصة", "Edit Live FX Rates", lang))
                     }
                 }
             }
@@ -395,8 +677,8 @@ fun SettingsScreen(
                     Spacer(Modifier.height(8.dp))
                     Text(
                         text = AppStrings.text(
-                            "بياناتك محفوظة محليًا داخل قاعدة بيانات Room بدون إرسال لأي خادم خارجي. تم تهيئة Android Keystore لحماية مفاتيح الأمان.",
-                            "Your data stays strictly local in Room with zero external servers. Android Keystore is initialized for vault protection.",
+                            "بياناتك محفوظة محليًا داخل قاعدة بيانات Room وتتم مزامنتها بشكل خاص ومعزول عبر حسابك في Firebase Firestore فقط، مع تهيئة Android Keystore لحماية مفاتيح الأمان.",
+                            "Your data is stored locally in Room and privately synced to your isolated Firebase Firestore account, with Android Keystore protecting vault keys.",
                             lang
                         ),
                         style = MaterialTheme.typography.bodyMedium,
@@ -472,6 +754,76 @@ fun SettingsScreen(
             }
         }
     }
+
+    if (showFxDialog) {
+        val editableSpecs = remember(prefs.customCurrencyRatesRaw) {
+            CurrencyConverter.allSpecsWithEffectiveRates().filter { it.code != "EGP" }
+        }
+        val rateInputs = remember(showFxDialog, prefs.customCurrencyRatesRaw) {
+            mutableStateMapOf<String, String>().apply {
+                editableSpecs.forEach { spec ->
+                    put(spec.code, spec.rateToEgp.stripTrailingZeros().toPlainString())
+                }
+            }
+        }
+        AlertDialog(
+            onDismissRequest = { showFxDialog = false },
+            modifier = Modifier.testTag("fx_rates_dialog"),
+            title = { Text(AppStrings.text("أسعار الصرف مقابل الجنيه (EGP)", "Exchange Rates vs EGP", lang)) },
+            text = {
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    editableSpecs.forEach { spec ->
+                        OutlinedTextField(
+                            value = rateInputs[spec.code].orEmpty(),
+                            onValueChange = { rateInputs[spec.code] = it },
+                            label = { Text("${spec.code} (${if (lang == AppLanguage.AR) spec.nameAr else spec.nameEn})") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            singleLine = true,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("fx_rate_input_${spec.code.lowercase()}")
+                        )
+                    }
+                    TextButton(
+                        onClick = {
+                            onResetCustomFxRates()
+                            showFxDialog = false
+                        },
+                        modifier = Modifier.testTag("fx_reset_btn")
+                    ) {
+                        Text(AppStrings.text("استعادة الأسعار الافتراضية", "Reset to Defaults", lang))
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val updated = mutableMapOf<String, BigDecimal>()
+                        editableSpecs.forEach { spec ->
+                            val rawVal = rateInputs[spec.code].orEmpty().replace(",", ".").trim()
+                            val parsed = rawVal.toBigDecimalOrNull()
+                            if (parsed != null && parsed > BigDecimal.ZERO) {
+                                updated[spec.code] = parsed
+                            }
+                        }
+                        onSaveCustomFxRates(CurrencyConverter.serializeRates(updated))
+                        showFxDialog = false
+                    },
+                    modifier = Modifier.testTag("fx_save_btn")
+                ) {
+                    Text(AppStrings.text("حفظ الأسعار", "Save Rates", lang))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showFxDialog = false }) {
+                    Text(AppStrings.text("إلغاء", "Cancel", lang))
+                }
+            }
+        )
+    }
 }
 
 @Composable
@@ -505,7 +857,7 @@ private fun ThemeSwatchCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.size(16.dp).clip(CircleShape).background(spec.swatchPrimary))
                     Box(Modifier.size(16.dp).clip(CircleShape).background(spec.swatchSecondary))
                     Box(Modifier.size(16.dp).clip(CircleShape).background(spec.swatchSurface))
@@ -539,11 +891,19 @@ private fun SettingSwitchRow(
     onCheckedChange: (Boolean) -> Unit
 ) {
     Row(
-        modifier = modifier.fillMaxWidth().padding(vertical = 4.dp),
+        modifier = modifier
+            .fillMaxWidth()
+            .toggleable(
+                value = checked,
+                enabled = enabled,
+                role = Role.Switch,
+                onValueChange = onCheckedChange
+            )
+            .padding(vertical = 6.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(title, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-        Switch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
+        Switch(checked = checked, onCheckedChange = null, enabled = enabled)
     }
 }

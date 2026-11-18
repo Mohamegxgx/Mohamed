@@ -10,6 +10,7 @@ import androidx.core.content.FileProvider
 import androidx.room.withTransaction
 import com.example.data.local.AppDatabase
 import com.example.data.local.entity.AccountEntity
+import com.example.data.local.entity.BnplProgramEntity
 import com.example.data.local.entity.BudgetEntity
 import com.example.data.local.entity.CategoryEntity
 import com.example.data.local.entity.DebtEntity
@@ -22,6 +23,7 @@ import com.example.data.local.entity.MerchantRuleEntity
 import com.example.data.local.entity.NotificationEntity
 import com.example.data.local.entity.PendingTransactionEntity
 import com.example.data.local.entity.RecurringRuleEntity
+import com.example.data.local.entity.SavingsCertificateEntity
 import com.example.data.local.entity.SavingsGoalEntity
 import com.example.data.local.entity.TransactionEntity
 import com.example.domain.engine.MoneyFormatter
@@ -36,7 +38,7 @@ import java.util.Locale
 
 @Serializable
 data class BackupPayload(
-    val schemaVersion: Int = 3,
+    val schemaVersion: Int = 5,
     val appName: String = "ELBAGORRY Money",
     val exportedAtMillis: Long = System.currentTimeMillis(),
     val accounts: List<AccountEntity> = emptyList(),
@@ -53,7 +55,9 @@ data class BackupPayload(
     val importedMessages: List<ImportedMessageEntity> = emptyList(),
     val pendingTransactions: List<PendingTransactionEntity> = emptyList(),
     val importHistory: List<ImportHistoryEntity> = emptyList(),
-    val merchantRules: List<MerchantRuleEntity> = emptyList()
+    val merchantRules: List<MerchantRuleEntity> = emptyList(),
+    val bnplPrograms: List<BnplProgramEntity> = emptyList(),
+    val savingsCertificates: List<SavingsCertificateEntity> = emptyList()
 )
 
 class BackupAndExportManager(private val db: AppDatabase) {
@@ -66,7 +70,7 @@ class BackupAndExportManager(private val db: AppDatabase) {
 
     suspend fun createJsonBackup(): String {
         val payload = BackupPayload(
-            schemaVersion = 3,
+            schemaVersion = 5,
             accounts = db.accountDao().getAllOnce(),
             categories = db.categoryDao().getAllOnce(),
             transactions = db.transactionDao().getAllOnce(),
@@ -81,16 +85,37 @@ class BackupAndExportManager(private val db: AppDatabase) {
             importedMessages = db.importedMessageDao().getAllOnce(),
             pendingTransactions = db.pendingTransactionDao().getAllOnce(),
             importHistory = db.importHistoryDao().getAllOnce(),
-            merchantRules = db.merchantRuleDao().getAllOnce()
+            merchantRules = db.merchantRuleDao().getAllOnce(),
+            bnplPrograms = db.bnplProgramDao().getAllOnce(),
+            savingsCertificates = db.savingsCertificateDao().getAllOnce()
         )
         return json.encodeToString(BackupPayload.serializer(), payload)
+    }
+
+    suspend fun createEncryptedJsonBackup(password: String): String {
+        val raw = createJsonBackup()
+        return BackupEncryptionHelper.encrypt(raw, password)
+    }
+
+    fun isEncryptedBackup(rawText: String): Boolean =
+        BackupEncryptionHelper.isEncryptedBackup(rawText)
+
+    suspend fun restoreAuto(rawText: String, password: String? = null): Result<Int> {
+        val jsonText = if (isEncryptedBackup(rawText)) {
+            val pwd = password?.takeIf { it.isNotBlank() }
+                ?: return Result.failure(IllegalStateException("ENCRYPTED_PASSWORD_REQUIRED"))
+            BackupEncryptionHelper.decrypt(rawText, pwd).getOrElse { return Result.failure(it) }
+        } else {
+            rawText
+        }
+        return restoreFromJson(jsonText)
     }
 
     fun validateBackupJson(rawJson: String): Result<BackupPayload> {
         return runCatching {
             require(rawJson.isNotBlank()) { "الملف فارغ" }
             val payload = json.decodeFromString(BackupPayload.serializer(), rawJson)
-            require(payload.schemaVersion in 1..3) { "إصدار النسخة الاحتياطية غير مدعوم" }
+            require(payload.schemaVersion in 1..5) { "إصدار النسخة الاحتياطية غير مدعوم" }
             require(payload.accounts.isNotEmpty() || payload.categories.isNotEmpty()) {
                 "النسخة الاحتياطية لا تحتوي على بيانات صالحة"
             }
@@ -119,14 +144,21 @@ class BackupAndExportManager(private val db: AppDatabase) {
                 db.budgetDao().deleteAll()
                 db.recurringRuleDao().deleteAll()
                 db.installmentDao().deleteAll()
+                db.bnplProgramDao().deleteAll()
+                db.savingsCertificateDao().deleteAll()
                 db.savingsGoalDao().deleteAll()
                 db.debtDao().deleteAll()
+                if (payload.financialSources.isNotEmpty()) {
+                    db.financialSourceDao().deleteAll()
+                }
                 db.categoryDao().deleteAll()
                 db.accountDao().deleteAll()
 
                 if (payload.accounts.isNotEmpty()) db.accountDao().insertAll(payload.accounts)
                 if (payload.categories.isNotEmpty()) db.categoryDao().insertAll(payload.categories)
                 if (payload.savingsGoals.isNotEmpty()) db.savingsGoalDao().insertAll(payload.savingsGoals)
+                if (payload.savingsCertificates.isNotEmpty()) db.savingsCertificateDao().insertAll(payload.savingsCertificates)
+                if (payload.bnplPrograms.isNotEmpty()) db.bnplProgramDao().insertAll(payload.bnplPrograms)
                 if (payload.installments.isNotEmpty()) db.installmentDao().insertAll(payload.installments)
                 if (payload.debts.isNotEmpty()) db.debtDao().insertAll(payload.debts)
                 if (payload.recurringRules.isNotEmpty()) db.recurringRuleDao().insertAll(payload.recurringRules)

@@ -22,8 +22,13 @@ import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.ContentPaste
 import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.FileOpen
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.material.icons.rounded.Balance
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.Security
+import androidx.compose.material.icons.rounded.TableView
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -33,18 +38,21 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -57,30 +65,40 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.data.local.entity.FinancialSourceEntity
 import com.example.data.local.entity.PendingTransactionEntity
+import com.example.domain.engine.MoneyFormatter
 import com.example.domain.model.AppLanguage
+import com.example.domain.model.BalanceDiscrepancy
 import com.example.domain.model.ImportedMessageStatus
 import com.example.domain.model.MessageChannel
 import com.example.domain.model.PendingStatus
 import com.example.domain.model.TransactionType
+import com.example.domain.reader.StatementColumnMapping
+import com.example.domain.reader.StatementPreview
 import com.example.reader.FinancialNotificationListenerService
 import com.example.ui.components.AppStrings
 import com.example.ui.components.EmptyStateCard
 import com.example.ui.components.FinancialCard
 import com.example.ui.components.formatReadableDateTime
 import com.example.ui.theme.CoralExpense
-import com.example.ui.theme.EmeraldPrimary
 import com.example.ui.theme.GoldAccent
 import com.example.ui.theme.SkyCyan
+import com.example.ui.theme.semanticPositiveColor
 import com.example.ui.viewmodel.MainUiState
+import com.example.ui.viewmodel.SmartReaderAiState
+import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun SmartMoneyReaderScreen(
     state: MainUiState,
     onSetReaderEnabled: (Boolean) -> Unit,
     onSetIgnoreOtp: (Boolean) -> Unit,
     onSetIgnoreBalance: (Boolean) -> Unit,
+    onSetAutoApprove: (Boolean) -> Unit = {},
     onAnalyzePasted: (sender: String, body: String, channel: MessageChannel) -> Unit,
+    onAnalyzePastedWithAi: (sender: String, body: String, channel: MessageChannel) -> Unit = { _, _, _ -> },
+    smartReaderAiState: SmartReaderAiState = SmartReaderAiState.Idle,
+    onResetReaderAiState: () -> Unit = {},
     onImportFile: (Uri) -> Unit,
     onApprovePending: (
         pendingId: Long,
@@ -97,18 +115,25 @@ fun SmartMoneyReaderScreen(
     onAddCustomSource: (nameAr: String, nameEn: String, keywords: String, defaultAccountId: Long?) -> Unit,
     onClearImportData: () -> Unit,
     onRunMockBatch: () -> Unit = {},
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onReconcileBalance: (BalanceDiscrepancy) -> Unit = {},
+    onDismissDiscrepancy: (Long) -> Unit = {},
+    onInspectCsvStatement: suspend (Uri) -> Pair<String, StatementPreview>? = { null },
+    onImportBankStatement: (rawContent: String, bankName: String, mapping: StatementColumnMapping?) -> Unit = { _, _, _ -> }
 ) {
     val lang = state.preferences.language
     val hide = state.preferences.hideAmounts
+    val positiveColor = semanticPositiveColor()
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    val coroutineScope = rememberCoroutineScope()
 
     var selectedTab by remember { mutableIntStateOf(0) }
     var showPasteDialog by remember { mutableStateOf(false) }
     var showAddSourceDialog by remember { mutableStateOf(false) }
     var showClearConfirm by remember { mutableStateOf(false) }
     var editingPending by remember { mutableStateOf<PendingTransactionEntity?>(null) }
+    var pendingCsvStatement by remember { mutableStateOf<Pair<String, StatementPreview>?>(null) }
 
     var isNotifListenerEnabled by remember {
         mutableStateOf(FinancialNotificationListenerService.isEnabled(context))
@@ -128,6 +153,16 @@ fun SmartMoneyReaderScreen(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri: Uri? ->
         if (uri != null) onImportFile(uri)
+    }
+
+    val csvPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            coroutineScope.launch {
+                pendingCsvStatement = onInspectCsvStatement(uri)
+            }
+        }
     }
 
     val pendingItems = remember(state.pendingTransactions) {
@@ -205,13 +240,72 @@ fun SmartMoneyReaderScreen(
                                 lang = lang,
                                 onOpenPaste = { showPasteDialog = true },
                                 onOpenFileImport = {
-                                    filePickerLauncher.launch(arrayOf("text/plain", "text/csv", "text/*"))
+                                    filePickerLauncher.launch(arrayOf("text/plain", "text/*"))
+                                },
+                                onOpenCsvImport = {
+                                    csvPickerLauncher.launch(arrayOf("text/csv", "text/comma-separated-values", "text/tab-separated-values", "text/plain", "*/*"))
                                 },
                                 onOpenNotifSettings = {
                                     FinancialNotificationListenerService.openSettings(context)
                                 },
                                 onRunMockBatch = onRunMockBatch
                             )
+                        }
+
+                        if (state.balanceDiscrepancies.isNotEmpty()) {
+                            items(state.balanceDiscrepancies, key = { "disc_${it.accountId}" }) { disc ->
+                                FinancialCard(
+                                    elevated = true,
+                                    borderColor = GoldAccent.copy(alpha = 0.7f),
+                                    modifier = Modifier.testTag("balance_discrepancy_card_${disc.accountId}")
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Icon(Icons.Rounded.Balance, contentDescription = null, tint = GoldAccent)
+                                        Text(
+                                            text = AppStrings.text(
+                                                "اختلاف رصيد مع ${disc.sourceName} (${disc.accountName})",
+                                                "Balance Mismatch with ${disc.sourceName} (${disc.accountName})",
+                                                lang
+                                            ),
+                                            style = MaterialTheme.typography.titleSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        IconButton(
+                                            onClick = { onDismissDiscrepancy(disc.accountId) },
+                                            modifier = Modifier
+                                                .minimumInteractiveComponentSize()
+                                                .testTag("dismiss_discrepancy_btn_${disc.accountId}")
+                                        ) {
+                                            Icon(Icons.Rounded.Close, contentDescription = AppStrings.text("تجاهل", "Dismiss", lang))
+                                        }
+                                    }
+                                    Spacer(Modifier.height(4.dp))
+                                    Text(
+                                        text = AppStrings.text(
+                                            "رصيد التطبيق: ${MoneyFormatter.formatPiasters(disc.appBalancePiasters, language = lang)} • رصيد الرسالة البنكية: ${MoneyFormatter.formatPiasters(disc.bankBalancePiasters, language = lang)}",
+                                            "App balance: ${MoneyFormatter.formatPiasters(disc.appBalancePiasters, language = lang)} • Bank SMS balance: ${MoneyFormatter.formatPiasters(disc.bankBalancePiasters, language = lang)}",
+                                            lang
+                                        ),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Spacer(Modifier.height(8.dp))
+                                    Button(
+                                        onClick = { onReconcileBalance(disc) },
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .minimumInteractiveComponentSize()
+                                            .testTag("reconcile_balance_btn_${disc.accountId}")
+                                    ) {
+                                        Text(AppStrings.text("مطابقة الرصيد تلقائيًا بقيد تسوية", "Reconcile Balance Automatically", lang))
+                                    }
+                                }
+                            }
                         }
 
                         if (!state.preferences.smartReaderEnabled) {
@@ -246,8 +340,12 @@ fun SmartMoneyReaderScreen(
                                     categories = state.categories,
                                     lang = lang,
                                     hideAmounts = hide,
-                                    onQuickApprove = { pending, accId, catId ->
-                                        onApprovePending(pending.id, accId, null, catId, null, null, null)
+                                    onQuickApprove = { pending, accId, targetId, catId ->
+                                        if (pending.mappedType == TransactionType.TRANSFER && (targetId == null || targetId == accId)) {
+                                            editingPending = pending
+                                        } else {
+                                            onApprovePending(pending.id, accId, targetId, catId, null, null, null)
+                                        }
                                     },
                                     onOpenEdit = { editingPending = it },
                                     onReject = onRejectPending,
@@ -272,6 +370,17 @@ fun SmartMoneyReaderScreen(
                                     fontWeight = FontWeight.Bold
                                 )
                                 Spacer(Modifier.height(8.dp))
+                                ReaderToggleRow(
+                                    title = AppStrings.text("تسجيل تلقائي للإشعارات عالية الثقة (≥ 85%)", "Auto-Record High-Confidence Alerts (≥ 85%)", lang),
+                                    subtitle = AppStrings.text(
+                                        "عند التفعيل، يتم قيد الرسائل البنكية/المالية الواردة من الإشعارات تلقائياً وتحديث الرصيد فور وصولها",
+                                        "Automatically posts incoming/outgoing notification alerts above 85% confidence straight into your ledger",
+                                        lang
+                                    ),
+                                    checked = state.preferences.smartReaderAutoApprove,
+                                    onCheckedChange = onSetAutoApprove,
+                                    switchModifier = Modifier.testTag("reader_auto_approve_switch")
+                                )
                                 ReaderToggleRow(
                                     title = AppStrings.text("تجاهل رسائل التحقق OTP والأمان", "Ignore OTP & Security Codes", lang),
                                     subtitle = AppStrings.text("لا يتم حفظ أي رمز تحقق أو رسالة شخصية أبدًا", "OTP codes are never stored or parsed", lang),
@@ -333,7 +442,7 @@ fun SmartMoneyReaderScreen(
                                             Text(
                                                 text = "${AppStrings.text("الحساب الافتراضي", "Default account", lang)}: $linkedAccount",
                                                 style = MaterialTheme.typography.labelSmall,
-                                                color = EmeraldPrimary
+                                                color = positiveColor
                                             )
                                         }
                                         if (src.isIgnored) {
@@ -427,7 +536,7 @@ fun SmartMoneyReaderScreen(
                                 )
                             }
                             items(rejectedOrApprovedPending.take(30), key = { it.id }) { item ->
-                                val statusColor = if (item.status == PendingStatus.APPROVED) EmeraldPrimary else CoralExpense
+                                val statusColor = if (item.status == PendingStatus.APPROVED) positiveColor else CoralExpense
                                 FinancialCard {
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
@@ -487,10 +596,15 @@ fun SmartMoneyReaderScreen(
     if (showPasteDialog) {
         PasteFinancialMessageDialog(
             lang = lang,
+            smartReaderAiState = smartReaderAiState,
             onDismiss = { showPasteDialog = false },
             onAnalyze = { sender, body ->
                 onAnalyzePasted(sender, body, MessageChannel.CLIPBOARD_PASTE)
-            }
+            },
+            onAnalyzeWithAi = { sender, body ->
+                onAnalyzePastedWithAi(sender, body, MessageChannel.CLIPBOARD_PASTE)
+            },
+            onResetAiState = onResetReaderAiState
         )
     }
 
@@ -513,6 +627,18 @@ fun SmartMoneyReaderScreen(
             onConfirm = { id, accId, targetId, catId, amount, type, desc ->
                 onApprovePending(id, accId, targetId, catId, amount, type, desc)
                 editingPending = null
+            }
+        )
+    }
+
+    pendingCsvStatement?.let { (rawCsv, preview) ->
+        BankStatementMappingDialog(
+            preview = preview,
+            lang = lang,
+            onDismiss = { pendingCsvStatement = null },
+            onConfirmImport = { bankLabel, mapping ->
+                onImportBankStatement(rawCsv, bankLabel, mapping)
+                pendingCsvStatement = null
             }
         )
     }
@@ -555,19 +681,21 @@ private fun ReaderIngestionChannelsCard(
     lang: AppLanguage,
     onOpenPaste: () -> Unit,
     onOpenFileImport: () -> Unit,
+    onOpenCsvImport: () -> Unit,
     onOpenNotifSettings: () -> Unit,
     onRunMockBatch: () -> Unit
 ) {
-    FinancialCard(borderColor = SkyCyan.copy(alpha = 0.45f)) {
+    val positiveColor = semanticPositiveColor()
+    FinancialCard(elevated = true, borderColor = SkyCyan.copy(alpha = 0.50f)) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Icon(Icons.Rounded.Security, contentDescription = null, tint = EmeraldPrimary)
+            Icon(Icons.Rounded.Security, contentDescription = null, tint = positiveColor)
             Text(
                 text = AppStrings.text(
-                    "تحليل محلي 100% متوافق مع سياسات Google Play",
-                    "100% Local Offline & Play-Policy Compliant",
+                    "قراءة ذكية محليًا أو بمساعدة Gemini AI",
+                    "Local Offline & Optional Gemini AI Parsing",
                     lang
                 ),
                 style = MaterialTheme.typography.titleSmall,
@@ -577,8 +705,8 @@ private fun ReaderIngestionChannelsCard(
         Spacer(Modifier.height(6.dp))
         Text(
             text = AppStrings.text(
-                "يحترم التطبيق خصوصيتك ولا يطلب صلاحية READ_SMS المقيدة. يمكنك إرسال الرسائل عبر مشاركة النص من أي تطبيق، لصق الرسائل، استيراد ملف، أو تفعيل قارئ الإشعارات الاختياري.",
-                "Privacy-first without restricted READ_SMS. Share messages to ELBAGORRY Money, paste alerts, import text/CSV files, or opt in to bank notification listening.",
+                "لا يطلب التطبيق صلاحية READ_SMS. الصق رسالة، شارك نصًا، أو استورد ملفًا أو كشف حساب CSV مع تصفية أكواد OTP تلقائيًا.",
+                "Privacy-first without READ_SMS. Paste alerts, share text, or import CSV bank statements with automatic OTP filtering.",
                 lang
             ),
             style = MaterialTheme.typography.bodySmall,
@@ -603,24 +731,27 @@ private fun ReaderIngestionChannelsCard(
                 modifier = Modifier.weight(1f).testTag("import_file_btn")
             ) {
                 Icon(Icons.Rounded.FileOpen, contentDescription = null, modifier = Modifier.size(16.dp))
-                Text(AppStrings.text("استيراد ملف", "Import File", lang), modifier = Modifier.padding(start = 4.dp))
+                Text(AppStrings.text("ملف رسائل", "Text File", lang), modifier = Modifier.padding(start = 4.dp))
             }
         }
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(8.dp))
         OutlinedButton(
-            onClick = onRunMockBatch,
+            onClick = onOpenCsvImport,
             enabled = enabled,
-            modifier = Modifier.fillMaxWidth().testTag("run_mock_batch_btn")
+            modifier = Modifier
+                .fillMaxWidth()
+                .minimumInteractiveComponentSize()
+                .testTag("import_csv_statement_btn")
         ) {
-            Icon(Icons.Rounded.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp))
+            Icon(Icons.Rounded.TableView, contentDescription = null, modifier = Modifier.size(18.dp))
             Text(
-                text = AppStrings.text("تشغيل رسائل محاكاة تجريبية (Mock)", "Run Sample Mock SMS Batch", lang),
+                text = AppStrings.text("استيراد كشف حساب بنكي (CSV / Excel)", "Import Bank Statement (CSV / TSV)", lang),
                 modifier = Modifier.padding(start = 6.dp)
             )
         }
         Spacer(Modifier.height(8.dp))
         Surface(
-            color = (if (notifListenerEnabled) EmeraldPrimary else GoldAccent).copy(alpha = 0.12f),
+            color = (if (notifListenerEnabled) positiveColor else GoldAccent).copy(alpha = 0.12f),
             shape = MaterialTheme.shapes.small,
             modifier = Modifier.fillMaxWidth()
         ) {
@@ -637,7 +768,7 @@ private fun ReaderIngestionChannelsCard(
                     Icon(
                         Icons.Rounded.NotificationsActive,
                         contentDescription = null,
-                        tint = if (notifListenerEnabled) EmeraldPrimary else GoldAccent,
+                        tint = if (notifListenerEnabled) positiveColor else GoldAccent,
                         modifier = Modifier.size(18.dp)
                     )
                     Column {
@@ -652,7 +783,7 @@ private fun ReaderIngestionChannelsCard(
                                 AppStrings.text("غير مفعّل (اختياري)", "Disabled (Optional)", lang)
                             },
                             style = MaterialTheme.typography.bodySmall,
-                            color = if (notifListenerEnabled) EmeraldPrimary else GoldAccent
+                            color = if (notifListenerEnabled) positiveColor else GoldAccent
                         )
                     }
                 }
@@ -672,7 +803,8 @@ private fun ReaderToggleRow(
     title: String,
     subtitle: String,
     checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit
+    onCheckedChange: (Boolean) -> Unit,
+    switchModifier: Modifier = Modifier
 ) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
@@ -683,6 +815,111 @@ private fun ReaderToggleRow(
             Text(title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
             Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            modifier = switchModifier
+        )
     }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun BankStatementMappingDialog(
+    preview: StatementPreview,
+    lang: AppLanguage,
+    onDismiss: () -> Unit,
+    onConfirmImport: (bankLabel: String, mapping: StatementColumnMapping) -> Unit
+) {
+    var bankLabel by remember { mutableStateOf("Bank Statement") }
+    var dateIdx by remember { mutableIntStateOf(preview.suggestedMapping.dateColumnIndex) }
+    var descIdx by remember { mutableIntStateOf(preview.suggestedMapping.descriptionColumnIndex) }
+    var amountIdx by remember { mutableStateOf(preview.suggestedMapping.amountColumnIndex) }
+    var debitIdx by remember { mutableStateOf(preview.suggestedMapping.debitColumnIndex) }
+    var creditIdx by remember { mutableStateOf(preview.suggestedMapping.creditColumnIndex) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(AppStrings.text("معاينة وتعيين أعمدة كشف الحساب", "Map Bank Statement Columns", lang)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = AppStrings.text(
+                        "تم اكتشاف ${preview.totalRowCount} صف • ${preview.headers.size} عمود",
+                        "Detected ${preview.totalRowCount} rows • ${preview.headers.size} columns",
+                        lang
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = SkyCyan
+                )
+                OutlinedTextField(
+                    value = bankLabel,
+                    onValueChange = { bankLabel = it },
+                    label = { Text(AppStrings.text("اسم البنك أو المحفظة", "Bank / Wallet Name", lang)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().testTag("csv_bank_name_input")
+                )
+                Text(AppStrings.text("عمود التاريخ:", "Date Column:", lang), style = MaterialTheme.typography.labelMedium)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    preview.headers.forEachIndexed { idx, header ->
+                        FilterChip(
+                            selected = dateIdx == idx,
+                            onClick = { dateIdx = idx },
+                            label = { Text(header.ifBlank { "#$idx" }) }
+                        )
+                    }
+                }
+                Text(AppStrings.text("عمود البيان / الوصف:", "Description Column:", lang), style = MaterialTheme.typography.labelMedium)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    preview.headers.forEachIndexed { idx, header ->
+                        FilterChip(
+                            selected = descIdx == idx,
+                            onClick = { descIdx = idx },
+                            label = { Text(header.ifBlank { "#$idx" }) }
+                        )
+                    }
+                }
+                Text(
+                    text = AppStrings.text(
+                        "التعرف التلقائي على المبلغ: " + listOfNotNull(
+                            amountIdx?.let { preview.headers.getOrNull(it) },
+                            debitIdx?.let { "خصم: ${preview.headers.getOrNull(it)}" },
+                            creditIdx?.let { "إيداع: ${preview.headers.getOrNull(it)}" }
+                        ).joinToString(" • ").ifBlank { "-" },
+                        "Detected amount column(s): " + listOfNotNull(
+                            amountIdx?.let { preview.headers.getOrNull(it) },
+                            debitIdx?.let { "Debit: ${preview.headers.getOrNull(it)}" },
+                            creditIdx?.let { "Credit: ${preview.headers.getOrNull(it)}" }
+                        ).joinToString(" • ").ifBlank { "-" },
+                        lang
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    onConfirmImport(
+                        bankLabel,
+                        StatementColumnMapping(
+                            dateColumnIndex = dateIdx,
+                            descriptionColumnIndex = descIdx,
+                            amountColumnIndex = amountIdx,
+                            debitColumnIndex = debitIdx,
+                            creditColumnIndex = creditIdx,
+                            balanceColumnIndex = preview.suggestedMapping.balanceColumnIndex
+                        )
+                    )
+                },
+                modifier = Modifier.testTag("confirm_csv_statement_import_btn")
+            ) {
+                Text(AppStrings.text("استيراد المعاملات", "Import Rows", lang))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(AppStrings.text("إلغاء", "Cancel", lang)) }
+        }
+    )
 }

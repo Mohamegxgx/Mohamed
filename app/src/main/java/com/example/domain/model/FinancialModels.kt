@@ -173,6 +173,7 @@ enum class ThemeMode {
 }
 
 enum class ThemePreset {
+    HYDROGEN_NEXUS,
     EMERALD_OBSIDIAN,
     ROYAL_SAPPHIRE,
     AMETHYST_ONYX,
@@ -242,6 +243,13 @@ enum class InsightSeverity {
     CRITICAL
 }
 
+data class WeeklySpendComparisonPoint(
+    val weekLabelAr: String,
+    val weekLabelEn: String,
+    val currentMonthSpendPiasters: Long,
+    val previousMonthSpendPiasters: Long
+)
+
 data class AnalyticsSummary(
     val dailySpendPiasters: Long,
     val monthlySpendPiasters: Long,
@@ -255,7 +263,8 @@ data class AnalyticsSummary(
     val highestSpendDayAmountPiasters: Long,
     val savingsRatePercent: Double,
     val projectedEndOfMonthBalancePiasters: Long,
-    val insights: List<SmartInsight>
+    val insights: List<SmartInsight>,
+    val weeklyComparison: List<WeeklySpendComparisonPoint> = emptyList()
 )
 
 data class BudgetEvaluation(
@@ -267,5 +276,36 @@ data class BudgetEvaluation(
     val remainingPiasters: Long,
     val usagePercent: Double,
     val isWarning80: Boolean,
-    val isExceeded: Boolean
+    val isExceeded: Boolean,
+    val dailySpendPacePiasters: Long = 0L,
+    val projectedMonthEndPiasters: Long = 0L,
+    val estimatedDepletionDay: Int? = null,
+    val recommendedDailyCapPiasters: Long = 0L,
+    val burnRateWarning: Boolean = false
 )
+
+@Serializable
+enum class SavingsAssetKind {
+    BANK_CERTIFICATE,
+    GOLD_RESERVE
+}
+
+@Serializable
+enum class PayoutCycle {
+    MONTHLY,
+    QUARTERLY,
+    SEMI_ANNUAL,
+    ANNUAL,
+    MATURITY
+}
+
+data class BalanceDiscrepancy(
+    val accountId: Long,
+    val accountName: String,
+    val appBalancePiasters: Long,
+    val bankBalancePiasters: Long,
+    val diffPiasters: Long,
+    val sourceName: String,
+    val detectedAtMillis: Long = System.currentTimeMillis()
+)
+

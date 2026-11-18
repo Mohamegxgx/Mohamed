@@ -3,6 +3,9 @@ package com.example.data.repository
 import androidx.room.withTransaction
 import com.example.data.local.AppDatabase
 import com.example.data.local.entity.AccountEntity
+import com.example.data.local.entity.AiChatMessageEntity
+import com.example.data.local.entity.AiChatSessionEntity
+import com.example.data.local.entity.BnplProgramEntity
 import com.example.data.local.entity.BudgetEntity
 import com.example.data.local.entity.CategoryEntity
 import com.example.data.local.entity.DebtEntity
@@ -15,9 +18,11 @@ import com.example.data.local.entity.MerchantRuleEntity
 import com.example.data.local.entity.NotificationEntity
 import com.example.data.local.entity.PendingTransactionEntity
 import com.example.data.local.entity.RecurringRuleEntity
+import com.example.data.local.entity.SavingsCertificateEntity
 import com.example.data.local.entity.SavingsGoalEntity
 import com.example.data.local.entity.TransactionEntity
 import com.example.domain.engine.DateRangeResolver
+import com.example.domain.engine.LocalSelfLearningEngine
 import com.example.domain.engine.VoiceTransactionParser
 import com.example.domain.model.DebtDirection
 import com.example.domain.model.DebtStatus
@@ -26,8 +31,10 @@ import com.example.domain.model.ImportedMessageStatus
 import com.example.domain.model.InstallmentFrequency
 import com.example.domain.model.InstallmentStatus
 import com.example.domain.model.MessageChannel
+import com.example.domain.model.PayoutCycle
 import com.example.domain.model.PendingStatus
 import com.example.domain.model.RecurringFrequency
+import com.example.domain.model.SavingsAssetKind
 import com.example.domain.model.TransactionSource
 import com.example.domain.model.TransactionType
 import kotlinx.coroutines.flow.Flow
@@ -53,6 +60,9 @@ class MoneyRepository(private val db: AppDatabase) {
     private val pendingTransactionDao = db.pendingTransactionDao()
     private val importHistoryDao = db.importHistoryDao()
     private val merchantRuleDao = db.merchantRuleDao()
+    private val bnplProgramDao = db.bnplProgramDao()
+    private val aiChatDao = db.aiChatDao()
+    private val savingsCertificateDao = db.savingsCertificateDao()
 
     val accounts: Flow<List<AccountEntity>> = accountDao.observeAll()
     val categories: Flow<List<CategoryEntity>> = categoryDao.observeAll()
@@ -69,6 +79,9 @@ class MoneyRepository(private val db: AppDatabase) {
     val pendingTransactions: Flow<List<PendingTransactionEntity>> = pendingTransactionDao.observeAll()
     val importHistory: Flow<List<ImportHistoryEntity>> = importHistoryDao.observeAll()
     val merchantRules: Flow<List<MerchantRuleEntity>> = merchantRuleDao.observeAll()
+    val bnplPrograms: Flow<List<BnplProgramEntity>> = bnplProgramDao.observeAll()
+    val aiChatSessions: Flow<List<AiChatSessionEntity>> = aiChatDao.observeAllSessions()
+    val savingsCertificates: Flow<List<SavingsCertificateEntity>> = savingsCertificateDao.observeAll()
 
     suspend fun ensureSeeded() {
         AppDatabase.seedDefaults(db)
@@ -86,7 +99,80 @@ class MoneyRepository(private val db: AppDatabase) {
         return db.withTransaction {
             val id = transactionDao.insert(tx)
             applyTransactionEffect(tx.copy(id = id), multiplier = 1)
+            autoLearnFromTransaction(tx)
             id
+        }
+    }
+
+    suspend fun addTransferWithFee(
+        fromAccountId: Long,
+        toAccountId: Long,
+        amountPiasters: Long,
+        feePiasters: Long,
+        description: String,
+        notes: String = "",
+        attachmentUri: String? = null,
+        timestampMillis: Long = System.currentTimeMillis()
+    ): Long = addTransferWithFeeReturningIds(
+        fromAccountId = fromAccountId,
+        toAccountId = toAccountId,
+        amountPiasters = amountPiasters,
+        feePiasters = feePiasters,
+        description = description,
+        notes = notes,
+        attachmentUri = attachmentUri,
+        timestampMillis = timestampMillis
+    ).first
+
+    suspend fun addTransferWithFeeReturningIds(
+        fromAccountId: Long,
+        toAccountId: Long,
+        amountPiasters: Long,
+        feePiasters: Long,
+        description: String,
+        notes: String = "",
+        attachmentUri: String? = null,
+        timestampMillis: Long = System.currentTimeMillis()
+    ): Pair<Long, Long?> {
+        require(amountPiasters > 0L) { "Amount must be positive" }
+        require(toAccountId != fromAccountId) { "Transfer requires a distinct target account" }
+        val cleanDesc = description.trim().ifEmpty { "تحويل بين الحسابات" }
+        return db.withTransaction {
+            val transferTx = TransactionEntity(
+                amountPiasters = amountPiasters,
+                type = TransactionType.TRANSFER,
+                accountId = fromAccountId,
+                targetAccountId = toAccountId,
+                description = cleanDesc,
+                notes = notes.trim(),
+                attachmentUri = attachmentUri,
+                timestampMillis = timestampMillis,
+                createdAt = timestampMillis,
+                updatedAt = timestampMillis
+            )
+            val transferId = transactionDao.insert(transferTx)
+            applyTransactionEffect(transferTx.copy(id = transferId), multiplier = 1)
+
+            var feeId: Long? = null
+            if (feePiasters > 0L) {
+                val feeCategoryId = categoryDao.getAllOnce().firstOrNull {
+                    it.type == TransactionType.EXPENSE && (it.nameEn == "Transfer Fees" || it.nameAr == "رسوم تحويل")
+                }?.id
+                val feeTx = TransactionEntity(
+                    amountPiasters = feePiasters,
+                    type = TransactionType.EXPENSE,
+                    accountId = fromAccountId,
+                    categoryId = feeCategoryId,
+                    description = "رسوم تحويل • $cleanDesc",
+                    notes = notes.trim(),
+                    timestampMillis = timestampMillis,
+                    createdAt = timestampMillis,
+                    updatedAt = timestampMillis
+                )
+                feeId = transactionDao.insert(feeTx)
+                applyTransactionEffect(feeTx.copy(id = feeId), multiplier = 1)
+            }
+            transferId to feeId
         }
     }
 
@@ -104,6 +190,21 @@ class MoneyRepository(private val db: AppDatabase) {
             val stamped = updated.copy(updatedAt = System.currentTimeMillis())
             transactionDao.update(stamped)
             applyTransactionEffect(stamped, multiplier = 1)
+            autoLearnFromTransaction(stamped)
+        }
+    }
+
+    private suspend fun autoLearnFromTransaction(tx: TransactionEntity) {
+        if ((tx.type == TransactionType.EXPENSE || tx.type == TransactionType.INCOME) && tx.categoryId != null) {
+            val merchantKey = LocalSelfLearningEngine.extractLearnableMerchantKey(tx.description)
+            if (merchantKey.length >= 2) {
+                learnOrUpdateMerchantRule(
+                    rawKeyword = merchantKey,
+                    categoryId = tx.categoryId,
+                    accountId = tx.accountId,
+                    preferredType = tx.type
+                )
+            }
         }
     }
 
@@ -205,6 +306,34 @@ class MoneyRepository(private val db: AppDatabase) {
         }
     }
 
+    suspend fun batchAssignCategories(assignments: Map<Long, Long>): Int {
+        if (assignments.isEmpty()) return 0
+        val now = System.currentTimeMillis()
+        var updatedCount = 0
+        db.withTransaction {
+            val categoriesById = categoryDao.getAllOnce().associateBy { it.id }
+            for ((txId, catId) in assignments) {
+                val existing = transactionDao.getById(txId) ?: continue
+                if (existing.type != TransactionType.EXPENSE && existing.type != TransactionType.INCOME) continue
+                val targetCategory = categoriesById[catId] ?: continue
+                if (targetCategory.type != existing.type) continue
+                if (existing.categoryId != catId) {
+                    transactionDao.update(existing.copy(categoryId = catId, updatedAt = now))
+                    updatedCount++
+                }
+                if (existing.description.trim().length >= 2) {
+                    learnOrUpdateMerchantRule(
+                        rawKeyword = existing.description.trim(),
+                        categoryId = catId,
+                        accountId = existing.accountId,
+                        preferredType = existing.type
+                    )
+                }
+            }
+        }
+        return updatedCount
+    }
+
     // --- Smart Merchant Auto-Categorization Rules ---
 
     suspend fun getAllMerchantRulesOnce(): List<MerchantRuleEntity> = merchantRuleDao.getAllOnce()
@@ -288,6 +417,21 @@ class MoneyRepository(private val db: AppDatabase) {
     suspend fun updateInstallment(installment: InstallmentEntity) = installmentDao.update(installment)
 
     suspend fun deleteInstallment(installment: InstallmentEntity) = installmentDao.delete(installment)
+
+    // --- BNPL Programs ---
+
+    suspend fun saveBnplProgram(program: BnplProgramEntity): Long = bnplProgramDao.insert(program)
+
+    suspend fun updateBnplProgram(program: BnplProgramEntity) = bnplProgramDao.update(program)
+
+    suspend fun deleteBnplProgram(program: BnplProgramEntity) {
+        db.withTransaction {
+            installmentDao.detachProgram(program.id)
+            bnplProgramDao.delete(program)
+        }
+    }
+
+    suspend fun getAllBnplProgramsOnce(): List<BnplProgramEntity> = bnplProgramDao.getAllOnce()
 
     suspend fun payInstallment(
         installmentId: Long,
@@ -537,9 +681,12 @@ class MoneyRepository(private val db: AppDatabase) {
             pending.importedMessageId?.let { msgId ->
                 importedMessageDao.updateStatus(msgId, ImportedMessageStatus.APPROVED)
             }
-            val merchantKey = pending.counterpartyName?.takeIf { it.isNotBlank() }
-                ?: overrideDescription?.trim()?.takeIf { it.length >= 2 }
-            if (merchantKey != null && (tx.categoryId != null || finalType == TransactionType.EXPENSE || finalType == TransactionType.INCOME)) {
+            val rawMerchantHint = overrideDescription?.trim()?.takeIf { it.length >= 2 }
+                ?: pending.counterpartyName?.takeIf { it.isNotBlank() }
+                ?: pending.extractedSummary
+            val merchantKey = LocalSelfLearningEngine.extractLearnableMerchantKey(rawMerchantHint)
+                .ifBlank { pending.counterpartyName?.trim().orEmpty() }
+            if (merchantKey.length >= 2 && (tx.categoryId != null || finalType == TransactionType.EXPENSE || finalType == TransactionType.INCOME)) {
                 learnOrUpdateMerchantRule(
                     rawKeyword = merchantKey,
                     categoryId = tx.categoryId,
@@ -589,5 +736,297 @@ class MoneyRepository(private val db: AppDatabase) {
             RecurringFrequency.YEARLY -> cal.add(Calendar.YEAR, 1)
         }
         return cal.timeInMillis
+    }
+
+    // --- AI Chat History & Cloud Sync Support ---
+
+    fun observeAiChatMessages(sessionId: String): Flow<List<AiChatMessageEntity>> =
+        aiChatDao.observeMessagesForSession(sessionId)
+
+    suspend fun getAllAiChatSessionsOnce(): List<AiChatSessionEntity> =
+        aiChatDao.getAllSessionsOnce()
+
+    suspend fun getAiChatSessionById(sessionId: String): AiChatSessionEntity? =
+        aiChatDao.getSessionById(sessionId)
+
+    suspend fun getAiChatMessagesOnce(sessionId: String): List<AiChatMessageEntity> =
+        aiChatDao.getMessagesForSessionOnce(sessionId)
+
+    suspend fun saveAiChatSessionAndMessages(
+        session: AiChatSessionEntity,
+        messages: List<AiChatMessageEntity>
+    ) {
+        db.withTransaction {
+            aiChatDao.insertSession(session)
+            if (messages.isNotEmpty()) {
+                aiChatDao.insertMessages(messages)
+            }
+        }
+    }
+
+    suspend fun markAiMessageUndone(messageId: String, sessionId: String) {
+        db.withTransaction {
+            aiChatDao.updateMessageUndone(messageId, true)
+            aiChatDao.markSessionSynced(sessionId, false)
+        }
+    }
+
+    suspend fun markAiChatSessionSynced(sessionId: String, synced: Boolean) {
+        aiChatDao.markSessionSynced(sessionId, synced)
+    }
+
+    suspend fun deleteAiChatSession(sessionId: String) {
+        db.withTransaction {
+            aiChatDao.deleteMessagesForSession(sessionId)
+            aiChatDao.deleteSessionById(sessionId)
+        }
+    }
+
+    suspend fun mergeRemoteAiChats(
+        remoteSessions: List<AiChatSessionEntity>,
+        remoteMessagesBySession: Map<String, List<AiChatMessageEntity>>
+    ) {
+        if (remoteSessions.isEmpty()) return
+        db.withTransaction {
+            remoteSessions.forEach { remoteSession ->
+                val localSession = aiChatDao.getSessionById(remoteSession.id)
+                val localMessages = aiChatDao.getMessagesForSessionOnce(remoteSession.id)
+                val remoteMessages = remoteMessagesBySession[remoteSession.id].orEmpty()
+
+                val mergedMessagesMap = LinkedHashMap<String, AiChatMessageEntity>()
+                localMessages.forEach { mergedMessagesMap[it.id] = it }
+                remoteMessages.forEach { remoteMsg ->
+                    val existing = mergedMessagesMap[remoteMsg.id]
+                    if (existing == null) {
+                        mergedMessagesMap[remoteMsg.id] = remoteMsg
+                    } else if (remoteMsg.isUndone && !existing.isUndone) {
+                        mergedMessagesMap[remoteMsg.id] = existing.copy(isUndone = true)
+                    }
+                }
+                val mergedMessages = mergedMessagesMap.values.sortedBy { it.timestampMillis }
+                val latestPreview = mergedMessages.lastOrNull()?.text?.take(120)
+                    ?: remoteSession.lastMessagePreview
+                val mergedUpdated = maxOf(
+                    localSession?.updatedAtMillis ?: 0L,
+                    remoteSession.updatedAtMillis,
+                    mergedMessages.lastOrNull()?.timestampMillis ?: 0L
+                )
+                val chosenTitle = when {
+                    localSession != null && localSession.title.isNotBlank() &&
+                        localSession.title != "محادثة جديدة" && localSession.title != "New Chat" -> localSession.title
+                    else -> remoteSession.title
+                }
+                val isSynced = localSession == null || (mergedMessages.size == localMessages.size && localSession.syncedToCloud)
+                aiChatDao.insertSession(
+                    AiChatSessionEntity(
+                        id = remoteSession.id,
+                        title = chosenTitle,
+                        lastMessagePreview = latestPreview,
+                        messageCount = mergedMessages.size,
+                        createdAtMillis = minOf(
+                            localSession?.createdAtMillis ?: remoteSession.createdAtMillis,
+                            remoteSession.createdAtMillis
+                        ),
+                        updatedAtMillis = mergedUpdated,
+                        syncedToCloud = isSynced
+                    )
+                )
+                if (mergedMessages.isNotEmpty()) {
+                    aiChatDao.insertMessages(mergedMessages)
+                }
+            }
+        }
+    }
+
+    // --- Bank Savings Certificates & Gold Reserves ---
+
+    suspend fun getAllSavingsCertificatesOnce(): List<SavingsCertificateEntity> =
+        savingsCertificateDao.getAllOnce()
+
+    suspend fun saveCertificate(cert: SavingsCertificateEntity): Long =
+        savingsCertificateDao.insert(cert)
+
+    suspend fun updateCertificate(cert: SavingsCertificateEntity) =
+        savingsCertificateDao.update(cert)
+
+    suspend fun deleteCertificate(cert: SavingsCertificateEntity) =
+        savingsCertificateDao.delete(cert)
+
+    suspend fun updateGoldPriceForKarat(karat: Int, pricePerGramPiasters: Long) {
+        if (pricePerGramPiasters > 0L) {
+            savingsCertificateDao.updateGoldPriceForKarat(karat, pricePerGramPiasters)
+        }
+    }
+
+    suspend fun creditCertificateInterest(
+        certId: Long,
+        overrideAmountPiasters: Long? = null,
+        nowMillis: Long = System.currentTimeMillis()
+    ): Long? {
+        return db.withTransaction {
+            val cert = savingsCertificateDao.getById(certId) ?: return@withTransaction null
+            val targetAccountId = cert.linkedAccountId
+                ?: accountDao.getAllOnce().firstOrNull { !it.isArchived }?.id
+                ?: return@withTransaction null
+            val yieldPiasters = overrideAmountPiasters ?: computeCyclePayoutPiasters(cert)
+            if (yieldPiasters <= 0L) return@withTransaction null
+
+            val incomeCategoryId = categoryDao.getAllOnce()
+                .firstOrNull { it.type == TransactionType.INCOME && (it.nameEn == "Extra Income" || it.nameAr == "دخل إضافي" || it.nameEn == "Investment") }
+                ?.id ?: categoryDao.getAllOnce().firstOrNull { it.type == TransactionType.INCOME }?.id
+
+            val txId = transactionDao.insert(
+                TransactionEntity(
+                    amountPiasters = yieldPiasters,
+                    type = TransactionType.INCOME,
+                    accountId = targetAccountId,
+                    categoryId = incomeCategoryId,
+                    source = TransactionSource.MANUAL_ENTRY,
+                    sourceIdentifier = cert.institutionName.ifBlank { "Savings Certificate" },
+                    description = "عائد ${cert.title}",
+                    notes = "عائد شهادة ادخار (${cert.annualYieldPercent}%)",
+                    timestampMillis = nowMillis,
+                    createdAt = nowMillis,
+                    updatedAt = nowMillis
+                )
+            )
+            accountDao.adjustBalance(targetAccountId, yieldPiasters)
+
+            val nextPayout = advancePayoutDate(cert.nextPayoutMillis, cert.payoutCycle)
+            val stillActive = if (cert.payoutCycle == PayoutCycle.MATURITY) false else cert.isActive
+            savingsCertificateDao.update(
+                cert.copy(
+                    nextPayoutMillis = maxOf(nextPayout, nowMillis + 24L * 60L * 60L * 1000L),
+                    isActive = stillActive
+                )
+            )
+            txId
+        }
+    }
+
+    suspend fun executeDueCertificates(nowMillis: Long = System.currentTimeMillis()): Int {
+        var creditedCount = 0
+        val dayFmt = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+
+        db.withTransaction {
+            val accounts = accountDao.getAllOnce().filter { !it.isArchived }
+            val fallbackAccountId = accounts.firstOrNull()?.id ?: return@withTransaction
+            val incomeCategoryId = categoryDao.getAllOnce()
+                .firstOrNull { it.type == TransactionType.INCOME && (it.nameEn == "Extra Income" || it.nameAr == "دخل إضافي" || it.nameEn == "Investment") }
+                ?.id ?: categoryDao.getAllOnce().firstOrNull { it.type == TransactionType.INCOME }?.id
+
+            val certs = savingsCertificateDao.getAllOnce().filter {
+                it.isActive &&
+                    it.autoCreditInterest &&
+                    it.assetKind == SavingsAssetKind.BANK_CERTIFICATE &&
+                    it.principalPiasters > 0L &&
+                    it.annualYieldPercent > 0.0
+            }
+
+            for (cert in certs) {
+                val targetAccountId = cert.linkedAccountId?.takeIf { aid -> accounts.any { it.id == aid } }
+                    ?: fallbackAccountId
+                val payoutPiasters = computeCyclePayoutPiasters(cert)
+                if (payoutPiasters <= 0L) continue
+
+                var payoutMillis = cert.nextPayoutMillis
+                var guard = 0
+                var matured = false
+                while (payoutMillis <= nowMillis && guard < 12 && !matured) {
+                    guard++
+                    val cycleDate = dayFmt.format(Date(payoutMillis))
+                    val uniqueFp = "cert_${cert.id}_$cycleDate"
+                    val tx = TransactionEntity(
+                        amountPiasters = payoutPiasters,
+                        type = TransactionType.INCOME,
+                        accountId = targetAccountId,
+                        categoryId = incomeCategoryId,
+                        dedupFingerprint = uniqueFp,
+                        source = TransactionSource.MANUAL_ENTRY,
+                        sourceIdentifier = cert.institutionName.ifBlank { "Savings Certificate" },
+                        description = "عائد ${cert.title}",
+                        notes = "صرف عائد شهادة تلقائي (${cert.annualYieldPercent}%)",
+                        timestampMillis = payoutMillis,
+                        createdAt = nowMillis,
+                        updatedAt = nowMillis
+                    )
+                    val insertedId = transactionDao.insertIgnoreDuplicate(tx)
+                    if (insertedId != -1L) {
+                        accountDao.adjustBalance(targetAccountId, payoutPiasters)
+                        creditedCount++
+                    }
+                    if (cert.payoutCycle == PayoutCycle.MATURITY) {
+                        matured = true
+                    } else {
+                        payoutMillis = advancePayoutDate(payoutMillis, cert.payoutCycle)
+                    }
+                }
+                if (payoutMillis != cert.nextPayoutMillis || matured) {
+                    savingsCertificateDao.update(
+                        cert.copy(
+                            nextPayoutMillis = payoutMillis,
+                            isActive = !matured && cert.isActive
+                        )
+                    )
+                }
+            }
+        }
+        return creditedCount
+    }
+
+    private fun computeCyclePayoutPiasters(cert: SavingsCertificateEntity): Long {
+        val annualPiasters = cert.principalPiasters.toDouble() * (cert.annualYieldPercent / 100.0)
+        val divisor = when (cert.payoutCycle) {
+            PayoutCycle.MONTHLY -> 12.0
+            PayoutCycle.QUARTERLY -> 4.0
+            PayoutCycle.SEMI_ANNUAL -> 2.0
+            PayoutCycle.ANNUAL -> 1.0
+            PayoutCycle.MATURITY -> 1.0
+        }
+        return kotlin.math.round(annualPiasters / divisor).toLong().coerceAtLeast(0L)
+    }
+
+    private fun advancePayoutDate(currentMillis: Long, cycle: PayoutCycle): Long {
+        val cal = Calendar.getInstance().apply { timeInMillis = currentMillis }
+        when (cycle) {
+            PayoutCycle.MONTHLY -> cal.add(Calendar.MONTH, 1)
+            PayoutCycle.QUARTERLY -> cal.add(Calendar.MONTH, 3)
+            PayoutCycle.SEMI_ANNUAL -> cal.add(Calendar.MONTH, 6)
+            PayoutCycle.ANNUAL, PayoutCycle.MATURITY -> cal.add(Calendar.YEAR, 1)
+        }
+        return cal.timeInMillis
+    }
+
+    // --- Automatic Bank Balance Reconciliation ---
+
+    suspend fun reconcileAccountBalance(
+        accountId: Long,
+        targetBankBalancePiasters: Long,
+        sourceName: String,
+        nowMillis: Long = System.currentTimeMillis()
+    ): Long? {
+        return db.withTransaction {
+            val acc = accountDao.getById(accountId) ?: return@withTransaction null
+            val delta = targetBankBalancePiasters - acc.currentBalancePiasters
+            if (delta == 0L) return@withTransaction null
+            val type = if (delta > 0L) TransactionType.INCOME else TransactionType.EXPENSE
+            val absAmount = kotlin.math.abs(delta)
+            val txId = transactionDao.insert(
+                TransactionEntity(
+                    amountPiasters = absAmount,
+                    type = type,
+                    accountId = accountId,
+                    source = TransactionSource.NOTIFICATION_IMPORT,
+                    sourceIdentifier = sourceName,
+                    description = "تسوية مطابقة رصيد $sourceName",
+                    notes = "مزامنة رصيد التطبيق مع رصيد الرسالة البنكية (${targetBankBalancePiasters / 100.0})",
+                    timestampMillis = nowMillis,
+                    createdAt = nowMillis,
+                    updatedAt = nowMillis
+                )
+            )
+            accountDao.adjustBalance(accountId, delta)
+            txId
+        }
     }
 }

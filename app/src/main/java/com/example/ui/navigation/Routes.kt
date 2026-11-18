@@ -37,3 +37,9 @@ object SettingsRoute
 
 @Serializable
 object ReceiptsVaultRoute
+
+@Serializable
+object AiAdvisorRoute
+
+@Serializable
+object WhatIfSimulatorRoute
